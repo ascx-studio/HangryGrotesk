@@ -81,7 +81,13 @@ The `Build and release font` workflow runs for `v*` tags and can also be run
 manually from the Actions tab. A tag must match the package version in
 `package.json` (for example, `v0.1.0`). Pushing a matching tag builds the font
 files and creates a GitHub Release with the ZIP and npm tarball attached. A
-manual run builds and uploads the artifacts without creating a release.
+manual run builds and uploads the artifacts without creating a release. Both
+triggers also deploy the specimen and web fonts to GitHub Pages. The Pages
+artifact publishes the preview as `index.html` and includes its CSS, font
+files, and downloadable ZIP.
+
+For the first deployment, set the repository's Pages publishing source to
+**GitHub Actions** under **Settings → Pages**.
 
 ```sh
 git tag v0.1.0
