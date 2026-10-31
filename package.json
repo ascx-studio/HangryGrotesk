@@ -1,0 +1,29 @@
+{
+  "name": "hangrygrotesk",
+  "version": "0.1.0",
+  "description": "A geometric stencil display font with Latin letters and digits, available as TTF, WOFF, and WOFF2.",
+  "type": "module",
+  "license": "MIT",
+  "author": { "name": "Rajeev Puri" },
+  "keywords": ["font", "typeface", "typography", "stencil", "grotesk", "display", "webfont", "ttf", "woff", "woff2"],
+  "engines": { "bun": ">=1.2.0" },
+  "style": "./dist/hangrygrotesk.css",
+  "exports": {
+    ".": "./dist/hangrygrotesk.css",
+    "./fonts/*": "./dist/fonts/*"
+  },
+  "sideEffects": ["**/*.css"],
+  "files": ["dist/fonts", "dist/hangrygrotesk.css", "src/hangrygrotesk.svg", "LICENSE.txt"],
+  "scripts": {
+    "build": "bun run src/build-font.ts",
+    "check": "tsc --noEmit",
+    "prepack": "bun run check && bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@xmldom/xmldom": "0.8.11",
+    "fflate": "0.8.3",
+    "fonteditor-core": "2.6.3",
+    "typescript": "7.0.2"
+  }
+}
