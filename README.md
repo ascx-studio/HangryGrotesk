@@ -75,6 +75,19 @@ Import the CSS in your app:
 import "hangrygrotesk";
 ```
 
+## GitHub Actions release
+
+The `Build and release font` workflow runs for `v*` tags and can also be run
+manually from the Actions tab. A tag must match the package version in
+`package.json` (for example, `v0.1.0`). Pushing a matching tag builds the font
+files and creates a GitHub Release with the ZIP and npm tarball attached. A
+manual run builds and uploads the artifacts without creating a release.
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ## Use on the web
 
 Copy `dist/hangrygrotesk.css` and the adjacent `dist/fonts/` directory into
