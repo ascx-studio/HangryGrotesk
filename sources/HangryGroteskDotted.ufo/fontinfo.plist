@@ -55,7 +55,7 @@
     <key>openTypeOS2WidthClass</key>
     <integer>5</integer>
     <key>openTypeOS2WinAscent</key>
-    <integer>850</integer>
+    <integer>950</integer>
     <key>openTypeOS2WinDescent</key>
     <integer>250</integer>
     <key>postscriptIsFixedPitch</key>

@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="ibreve" format="2">
+  <advance width="412"/>
+  <unicode hex="012D"/>
+  <outline>
+    <contour>
+      <point x="148" y="598" type="line"/>
+      <point x="264" y="598" type="line"/>
+      <point x="264" y="122" type="line" smooth="yes"/>
+      <point x="264" y="48"/>
+      <point x="209" y="0"/>
+      <point x="148" y="0" type="curve"/>
+    </contour>
+    <contour>
+      <point x="148" y="598" type="line"/>
+      <point x="148" y="453" type="line"/>
+      <point x="141" y="519"/>
+      <point x="111" y="566"/>
+      <point x="60" y="566" type="curve"/>
+      <point x="60" y="598" type="line"/>
+    </contour>
+    <contour>
+      <point x="148" y="0" type="line"/>
+      <point x="60" y="0" type="line"/>
+      <point x="60" y="32" type="line"/>
+      <point x="111" y="32"/>
+      <point x="141" y="80"/>
+      <point x="148" y="145" type="curve"/>
+    </contour>
+    <contour>
+      <point x="264" y="0" type="line"/>
+      <point x="264" y="145" type="line"/>
+      <point x="271" y="80"/>
+      <point x="301" y="32"/>
+      <point x="352" y="32" type="curve"/>
+      <point x="352" y="0" type="line"/>
+    </contour>
+    <contour>
+      <point x="76" y="773" type="line"/>
+      <point x="151" y="773" type="line"/>
+      <point x="171" y="698" type="line"/>
+      <point x="241" y="698" type="line"/>
+      <point x="261" y="773" type="line"/>
+      <point x="336" y="773" type="line"/>
+      <point x="291" y="633" type="line"/>
+      <point x="121" y="633" type="line"/>
+    </contour>
+  </outline>
+</glyph>

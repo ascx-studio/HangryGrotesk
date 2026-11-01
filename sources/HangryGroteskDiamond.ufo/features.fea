@@ -1,0 +1,11 @@
+languagesystem DFLT dflt;
+languagesystem latn dflt;
+languagesystem latn CAT;
+
+feature locl {
+    script latn;
+    language CAT;
+    sub l periodcentered' l by periodcentered.loclCAT;
+    sub L periodcentered' L by periodcentered.loclCAT.case;
+    sub L periodcentered' l by periodcentered.loclCAT.case;
+} locl;

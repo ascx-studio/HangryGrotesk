@@ -31,6 +31,22 @@
       font-display: swap;
     }
 
+    @font-face {
+      font-family: HangryDiamond;
+      src: url("./fonts/HangryGroteskDiamond-Regular.woff2") format("woff2"),
+           url("./fonts/HangryGroteskDiamond-Regular.woff") format("woff");
+      font-weight: 400;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: HangrySerif;
+      src: url("./fonts/HangryGroteskSerif-Regular.woff2") format("woff2"),
+           url("./fonts/HangryGroteskSerif-Regular.woff") format("woff");
+      font-weight: 400;
+      font-display: swap;
+    }
+
     :root {
       --active-font: "Hangry Grotesk", Hangry, sans-serif;
       color-scheme: dark;
@@ -93,6 +109,14 @@
 
     [data-variant="dotted"] {
       --active-font: "Hangry Grotesk Dotted", HangryDotted, sans-serif;
+    }
+
+    [data-variant="diamond"] {
+      --active-font: "Hangry Grotesk Diamond", HangryDiamond, sans-serif;
+    }
+
+    [data-variant="serif"] {
+      --active-font: "Hangry Grotesk Serif", HangrySerif, serif;
     }
 
     .specimen-font {
@@ -844,8 +868,10 @@
       <div class="top-actions">
         <div class="align-group" role="group" aria-label="Font variant">
           <button class="align-btn active" id="variant-sans" data-variant-btn="sans" type="button">Grotesk</button>
+          <button class="align-btn" id="variant-serif" data-variant-btn="serif" type="button">Serif</button>
           <button class="align-btn" id="variant-pixel" data-variant-btn="pixel" type="button">Pixel</button>
           <button class="align-btn" id="variant-dotted" data-variant-btn="dotted" type="button">Dotted</button>
+          <button class="align-btn" id="variant-diamond" data-variant-btn="diamond" type="button">Diamond</button>
         </div>
         <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle theme">Theme: Dark</button>
         <a class="btn-primary" href="HangryGrotesk-0.1.0.zip" download>Get It ↓</a>
@@ -872,12 +898,12 @@
       <!-- 4-Column Technical Stats Grid -->
       <section class="stats-grid" aria-label="Typeface specifications">
         <div class="stat-cell">
-          <div class="stat-top"><span>Variants</span><span>Grotesk · Pixel · Dotted</span></div>
-          <div class="stat-value specimen-font">3 Styles</div>
+          <div class="stat-top"><span>Variants</span><span>Grotesk · Serif · Pixel · Dotted · Diamond</span></div>
+          <div class="stat-value specimen-font">5 Styles</div>
         </div>
         <div class="stat-cell">
-          <div class="stat-top"><span>Character Set</span><span>A–Z a–z 0–9</span></div>
-          <div class="stat-value specimen-font">64 Glyphs</div>
+          <div class="stat-top"><span>Character Set</span><span>Common Latin + Punctuation</span></div>
+          <div class="stat-value specimen-font">347 Glyphs</div>
         </div>
         <div class="stat-cell">
           <div class="stat-top"><span>Units Per Em</span><span>Grid</span></div>
@@ -1012,7 +1038,7 @@
   <div class="toast" id="toast" role="status">Copied</div>
 
   <script>
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-";
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-!?,:;'\"()[]{}/\\@#%*&+=$€£¥©ÁÀÂÄÅÃÆÇÉÈÊËÍÎÏÑÓÔÖØÚÛÜÝßŒŠŽáàâäåãæçéèêëíîïñóôöøúûüýœšž";
     const grid = document.querySelector("#glyph-grid");
     const sample = document.querySelector("#sample");
     const inspGlyph = document.querySelector("#insp-glyph");
@@ -1171,6 +1197,24 @@
           document.querySelector("#stage-val-x").textContent = "606";
           document.querySelector("#stage-val-desc").textContent = "-238";
           document.querySelector("#stage-lsb").textContent = "GRID: 34 UPEM · DOT MATRIX";
+        } else if (variant === "diamond") {
+          document.documentElement.setAttribute("data-variant", "diamond");
+          document.querySelector("#val-cap").textContent = "746";
+          document.querySelector("#val-x").textContent = "610";
+          document.querySelector("#val-desc").textContent = "-238";
+          document.querySelector("#stage-val-cap").textContent = "746";
+          document.querySelector("#stage-val-x").textContent = "610";
+          document.querySelector("#stage-val-desc").textContent = "-238";
+          document.querySelector("#stage-lsb").textContent = "GRID: 34 UPEM · DIAMOND MATRIX";
+        } else if (variant === "serif") {
+          document.documentElement.setAttribute("data-variant", "serif");
+          document.querySelector("#val-cap").textContent = "762";
+          document.querySelector("#val-x").textContent = "598";
+          document.querySelector("#val-desc").textContent = "-224";
+          document.querySelector("#stage-val-cap").textContent = "762";
+          document.querySelector("#stage-val-x").textContent = "598";
+          document.querySelector("#stage-val-desc").textContent = "-224";
+          document.querySelector("#stage-lsb").textContent = "LSB: 60 · SHARP CURVED SERIF";
         } else {
           document.documentElement.removeAttribute("data-variant");
           document.querySelector("#val-cap").textContent = "762";
