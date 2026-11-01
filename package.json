@@ -2,6 +2,14 @@
   "name": "hangrygrotesk",
   "version": "0.1.0",
   "description": "A geometric stencil display font with Latin letters and digits, available as TTF, WOFF, and WOFF2.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ascx-studio/HangryGrotesk.git"
+  },
+  "homepage": "https://ascx-studio.github.io/HangryGrotesk/",
+  "bugs": {
+    "url": "https://github.com/ascx-studio/HangryGrotesk/issues"
+  },
   "type": "module",
   "license": "MIT",
   "author": { "name": "Rajeev Puri" },
@@ -17,7 +25,10 @@
   "scripts": {
     "build": "bun run src/build-font.ts",
     "check": "tsc --noEmit",
-    "prepack": "bun run check && bun run build"
+    "prepack": "bun run check && bun run build",
+    "release:patch": "npm version patch && git push origin main --follow-tags",
+    "release:minor": "npm version minor && git push origin main --follow-tags",
+    "release:major": "npm version major && git push origin main --follow-tags"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
