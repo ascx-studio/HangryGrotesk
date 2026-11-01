@@ -15,7 +15,16 @@
       font-display: swap;
     }
 
+    @font-face {
+      font-family: HangryPixel;
+      src: url("./fonts/HangryGroteskPixel-Regular.woff2") format("woff2"),
+           url("./fonts/HangryGroteskPixel-Regular.woff") format("woff");
+      font-weight: 400;
+      font-display: swap;
+    }
+
     :root {
+      --active-font: "Hangry Grotesk", Hangry, sans-serif;
       color-scheme: dark;
       --bg: #000000;
       --surface: #0a0a0a;
@@ -70,8 +79,12 @@
       color: inherit;
     }
 
+    [data-variant="pixel"] {
+      --active-font: "Hangry Grotesk Pixel", HangryPixel, sans-serif;
+    }
+
     .specimen-font {
-      font-family: "Hangry Grotesk", Hangry, sans-serif;
+      font-family: var(--active-font);
       font-weight: 400;
     }
 
@@ -817,6 +830,10 @@
       </nav>
 
       <div class="top-actions">
+        <div class="align-group" role="group" aria-label="Font variant">
+          <button class="align-btn active" id="variant-sans" data-variant-btn="sans" type="button">Grotesk</button>
+          <button class="align-btn" id="variant-pixel" data-variant-btn="pixel" type="button">Pixel</button>
+        </div>
         <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle theme">Theme: Dark</button>
         <a class="btn-primary" href="HangryGrotesk-0.1.0.zip" download>Get It ↓</a>
       </div>
@@ -830,13 +847,11 @@
         <span class="cross bl"></span>
         <span class="cross br"></span>
 
-
-
         <div class="hero-stage" id="hero-stage">
-          <div class="metric-guide" id="guide-cap"><span>Cap height</span><span>762</span></div>
-          <div class="metric-guide" id="guide-x"><span>X-height</span><span>598</span></div>
+          <div class="metric-guide" id="guide-cap"><span>Cap height</span><span id="val-cap">762</span></div>
+          <div class="metric-guide" id="guide-x"><span>X-height</span><span id="val-x">598</span></div>
           <div class="metric-guide" id="guide-base"><span>Baseline</span><span>0</span></div>
-          <div class="metric-guide" id="guide-desc"><span>Descender</span><span>-224</span></div>
+          <div class="metric-guide" id="guide-desc"><span>Descender</span><span id="val-desc">-224</span></div>
           <h1 class="hero-title specimen-font" id="hero-title">Hangry </h1>
         </div>
       </section>
@@ -844,8 +859,8 @@
       <!-- 4-Column Technical Stats Grid -->
       <section class="stats-grid" aria-label="Typeface specifications">
         <div class="stat-cell">
-          <div class="stat-top"><span>Weights</span><span>400</span></div>
-          <div class="stat-value specimen-font">1 Style</div>
+          <div class="stat-top"><span>Variants</span><span>Grotesk + Pixel</span></div>
+          <div class="stat-value specimen-font">2 Styles</div>
         </div>
         <div class="stat-cell">
           <div class="stat-top"><span>Character Set</span><span>A–Z a–z 0–9</span></div>
@@ -892,15 +907,15 @@
             </div>
 
             <div class="stage-canvas">
-              <div class="stage-line" style="top: 18%;"><span>Cap height</span><span>762</span></div>
-              <div class="stage-line" style="top: 33%;"><span>X-height</span><span>598</span></div>
+              <div class="stage-line" style="top: 18%;"><span>Cap height</span><span id="stage-val-cap">762</span></div>
+              <div class="stage-line" style="top: 33%;"><span>X-height</span><span id="stage-val-x">598</span></div>
               <div class="stage-line" style="top: 76%;"><span>Baseline</span><span>0</span></div>
-              <div class="stage-line" style="top: 90%;"><span>Descender</span><span>-224</span></div>
+              <div class="stage-line" style="top: 90%;"><span>Descender</span><span id="stage-val-desc">-224</span></div>
               <div class="stage-glyph specimen-font" id="insp-glyph">H</div>
             </div>
 
             <div class="stage-meta-bottom">
-              <span>LSB: 60 · RSB: 60</span>
+              <span id="stage-lsb">LSB: 60 · RSB: 60</span>
               <button class="copy-chip" id="insert-inspected" type="button">Insert in Playground ↵</button>
             </div>
           </div>
@@ -1111,11 +1126,40 @@
       document.querySelector("#leading-value").textContent = val;
     });
 
-    document.querySelectorAll(".align-btn").forEach(btn => {
+    document.querySelectorAll(".align-btn[data-align]").forEach(btn => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll(".align-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".align-btn[data-align]").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         sample.style.textAlign = btn.dataset.align;
+      });
+    });
+
+    // Font variant switcher (Grotesk / Pixel)
+    document.querySelectorAll("[data-variant-btn]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const isPixel = btn.dataset.variantBtn === "pixel";
+        document.querySelectorAll("[data-variant-btn]").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        if (isPixel) {
+          document.documentElement.setAttribute("data-variant", "pixel");
+          document.querySelector("#val-cap").textContent = "744";
+          document.querySelector("#val-x").textContent = "608";
+          document.querySelector("#val-desc").textContent = "-238";
+          document.querySelector("#stage-val-cap").textContent = "744";
+          document.querySelector("#stage-val-x").textContent = "608";
+          document.querySelector("#stage-val-desc").textContent = "-238";
+          document.querySelector("#stage-lsb").textContent = "GRID: 34 UPEM · PIXEL TILES";
+        } else {
+          document.documentElement.removeAttribute("data-variant");
+          document.querySelector("#val-cap").textContent = "762";
+          document.querySelector("#val-x").textContent = "598";
+          document.querySelector("#val-desc").textContent = "-224";
+          document.querySelector("#stage-val-cap").textContent = "762";
+          document.querySelector("#stage-val-x").textContent = "598";
+          document.querySelector("#stage-val-desc").textContent = "-224";
+          document.querySelector("#stage-lsb").textContent = "LSB: 60 · RSB: 60";
+        }
+        updateHeroGuides();
       });
     });
 

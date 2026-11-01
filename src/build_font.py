@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Hangry Grotesk UFO source, TTF, WOFF, WOFF2, CSS, preview, and ZIP."""
+"""Build Hangry Grotesk & Hangry Grotesk Pixel UFO sources, TTF, WOFF, WOFF2, CSS, preview, and ZIP."""
 
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ from fontTools.ttLib.tables import ttProgram
 ROOT = Path(__file__).resolve().parent.parent
 FAMILY = "Hangry Grotesk"
 STEM = "HangryGrotesk-Regular"
+PIXEL_FAMILY = "Hangry Grotesk Pixel"
+PIXEL_STEM = "HangryGroteskPixel-Regular"
 EPOCH = datetime.datetime(2026, 10, 31, 0, 0, 0, tzinfo=datetime.timezone.utc)
 
 
@@ -47,7 +49,11 @@ def clean_duplicate_closing_points(g: ufoLib2.objects.Glyph) -> None:
             c.points.pop()
 
 
-def build_svg_glyphs(ufo: ufoLib2.Font) -> None:
+def build_svg_glyphs(
+    ufo: ufoLib2.Font,
+    svg_path: Path,
+    sidebearing: int = 60,
+) -> None:
     digits = "zero one two three four five six seven eight nine".split()
     rows = [
         ("abcdefghi", 368),
@@ -82,9 +88,9 @@ def build_svg_glyphs(ufo: ufoLib2.Font) -> None:
     space.unicodes = [0x0020, 0x00A0]
     space.width = 320
 
-    tree = ET.parse(ROOT / "src" / "hangrygrotesk.svg")
+    tree = ET.parse(svg_path)
     paths = tree.findall(".//{http://www.w3.org/2000/svg}path")
-    assert len(paths) == 64, f"Expected 64 SVG paths, found {len(paths)}"
+    assert len(paths) == 64, f"Expected 64 SVG paths in {svg_path.name}, found {len(paths)}"
 
     for p in paths:
         name = p.attrib.get("id") or "eight"
@@ -96,11 +102,13 @@ def build_svg_glyphs(ufo: ufoLib2.Font) -> None:
         parse_path(p.attrib["d"], g.getPen())
         pts = [pt for c in g.contours for pt in c.points]
         xmin = min(pt.x for pt in pts)
-        base = max(pt.y for pt in pts) if name == "eight" else baselines[name]
+        # In hangrygrotesk.svg, 'eight' is in a nested 0..76.16 viewBox; in hangrygroteskpixel.svg it is on row 7 (1412)
+        is_nested_eight = name == "eight" and max(pt.y for pt in pts) < 200
+        base = max(pt.y for pt in pts) if is_nested_eight else baselines[name]
 
         for c in g.contours:
             for pt in c.points:
-                pt.x = round((pt.x - xmin) * 10 + 60)
+                pt.x = round((pt.x - xmin) * 10 + sidebearing)
                 pt.y = round((base - pt.y) * 10)
 
         # Honor counter-winding metadata on SVG glyphs when converting to TrueType
@@ -109,25 +117,34 @@ def build_svg_glyphs(ufo: ufoLib2.Font) -> None:
 
         clean_duplicate_closing_points(g)
         xmax = max(pt.x for c in g.contours for pt in c.points)
-        g.width = round(xmax + 60)
+        g.width = round(xmax + sidebearing)
 
 
-def set_ufo_metadata(ufo: ufoLib2.Font, pkg: dict, copyright_str: str, license_str: str) -> None:
+def set_ufo_metadata(
+    ufo: ufoLib2.Font,
+    pkg: dict,
+    copyright_str: str,
+    license_str: str,
+    family_name: str = FAMILY,
+    stem: str = STEM,
+    cap_height: int = 762,
+    x_height: int = 598,
+) -> None:
     raw_major, raw_minor = (int(x) for x in pkg["version"].split(".")[:2])
     major = max(1, raw_major)
     minor = raw_minor
     info = ufo.info
-    info.familyName = FAMILY
+    info.familyName = family_name
     info.styleName = "Regular"
-    info.styleMapFamilyName = FAMILY
+    info.styleMapFamilyName = family_name
     info.styleMapStyleName = "regular"
     info.versionMajor = major
     info.versionMinor = minor
     info.unitsPerEm = 1000
     info.ascender = 950
     info.descender = -250
-    info.xHeight = 598
-    info.capHeight = 762
+    info.xHeight = x_height
+    info.capHeight = cap_height
     info.italicAngle = 0
     info.copyright = copyright_str
     info.openTypeNameDesigner = pkg["author"]["name"]
@@ -136,7 +153,7 @@ def set_ufo_metadata(ufo: ufoLib2.Font, pkg: dict, copyright_str: str, license_s
     info.openTypeNameLicense = license_str
     info.openTypeNameLicenseURL = "https://openfontlicense.org"
     info.openTypeNameVersion = f"Version {major}.{minor:03d}"
-    info.openTypeNameUniqueID = f"{STEM}-{pkg['version']}"
+    info.openTypeNameUniqueID = f"{stem}-{pkg['version']}"
     info.openTypeNameSampleText = "The quick brown fox jumps over the lazy dog. 0123456789"
     info.openTypeHheaAscender = 950
     info.openTypeHheaDescender = -250
@@ -156,7 +173,16 @@ def set_ufo_metadata(ufo: ufoLib2.Font, pkg: dict, copyright_str: str, license_s
     info.postscriptIsFixedPitch = False
 
 
-def postprocess_ttf(ttf: TTFont, pkg: dict, copyright_str: str, license_str: str) -> None:
+def postprocess_ttf(
+    ttf: TTFont,
+    pkg: dict,
+    copyright_str: str,
+    license_str: str,
+    family_name: str = FAMILY,
+    stem: str = STEM,
+    cap_height: int = 762,
+    x_height: int = 598,
+) -> None:
     raw_major, raw_minor = (int(x) for x in pkg["version"].split(".")[:2])
     major = max(1, raw_major)
     minor = raw_minor
@@ -186,19 +212,19 @@ def postprocess_ttf(ttf: TTFont, pkg: dict, copyright_str: str, license_str: str
     os2.fsType = 0
     os2.fsSelection = 0x00C0
     os2.achVendID = "ASCX"
-    os2.sxHeight = 598
-    os2.sCapHeight = 762
+    os2.sxHeight = x_height
+    os2.sCapHeight = cap_height
 
     name_table = newTable("name")
     name_table.names = []
     records = {
         0: copyright_str,
-        1: FAMILY,
+        1: family_name,
         2: "Regular",
-        3: f"{STEM}-{pkg['version']}",
-        4: f"{FAMILY} Regular",
+        3: f"{stem}-{pkg['version']}",
+        4: f"{family_name} Regular",
         5: version_str,
-        6: STEM,
+        6: stem,
         8: pkg["author"]["name"],
         9: pkg["author"]["name"],
         10: pkg["description"],
@@ -228,6 +254,31 @@ def postprocess_ttf(ttf: TTFont, pkg: dict, copyright_str: str, license_str: str
     ttf["meta"] = meta
 
 
+def save_font_formats(
+    ttf: TTFont,
+    stem: str,
+    dist_fonts_dir: Path,
+    gf_ttf_dir: Path,
+    gf_web_dir: Path,
+) -> tuple[Path, Path, Path]:
+    ttf_path = dist_fonts_dir / f"{stem}.ttf"
+    woff_path = dist_fonts_dir / f"{stem}.woff"
+    woff2_path = dist_fonts_dir / f"{stem}.woff2"
+
+    ttf.flavor = None
+    ttf.save(ttf_path)
+    shutil.copy2(ttf_path, gf_ttf_dir / f"{stem}.ttf")
+
+    ttf.flavor = "woff"
+    ttf.save(woff_path)
+
+    ttf.flavor = "woff2"
+    ttf.save(woff2_path)
+    shutil.copy2(woff2_path, gf_web_dir / f"{stem}.woff2")
+
+    return ttf_path, woff_path, woff2_path
+
+
 def main() -> None:
     pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     ofl_path = ROOT / "OFL.txt"
@@ -242,20 +293,56 @@ def main() -> None:
         "This license is available with a FAQ at: https://openfontlicense.org"
     )
 
-    ufo = ufoLib2.Font()
-    build_svg_glyphs(ufo)
-    set_ufo_metadata(ufo, pkg, copyright_str, license_str)
-
     sources_dir = ROOT / "sources"
     sources_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Build Regular UFO & TTF from src/hangrygrotesk.svg
+    ufo = ufoLib2.Font()
+    build_svg_glyphs(ufo, ROOT / "src" / "hangrygrotesk.svg", sidebearing=60)
+    set_ufo_metadata(ufo, pkg, copyright_str, license_str)
+
     ufo_path = sources_dir / "HangryGrotesk.ufo"
     if ufo_path.exists():
         shutil.rmtree(ufo_path)
     ufo.save(ufo_path, overwrite=True)
 
-    # Compile TTF directly from the SVG-derived UFO without reversing or merging stencil contours
+    # Compile Regular TTF directly from SVG-derived UFO without reversing or merging stencil contours
     ttf = ufo2ft.compileTTF(ufo, removeOverlaps=False, reverseDirection=False, inplace=False)
     postprocess_ttf(ttf, pkg, copyright_str, license_str)
+
+    # 2. Build Pixel UFO & TTF from src/hangrygroteskpixel.svg
+    pixel_ufo = ufoLib2.Font()
+    build_svg_glyphs(pixel_ufo, ROOT / "src" / "hangrygroteskpixel.svg", sidebearing=68)
+    set_ufo_metadata(
+        pixel_ufo,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=PIXEL_FAMILY,
+        stem=PIXEL_STEM,
+        cap_height=744,
+        x_height=608,
+    )
+
+    pixel_ufo_path = sources_dir / "HangryGroteskPixel.ufo"
+    if pixel_ufo_path.exists():
+        shutil.rmtree(pixel_ufo_path)
+    pixel_ufo.save(pixel_ufo_path, overwrite=True)
+
+    # Compile Pixel TTF directly from discrete 34-UPEM pixel tiles in src/hangrygroteskpixel.svg
+    pixel_ttf = ufo2ft.compileTTF(
+        pixel_ufo, removeOverlaps=False, reverseDirection=False, inplace=False
+    )
+    postprocess_ttf(
+        pixel_ttf,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=PIXEL_FAMILY,
+        stem=PIXEL_STEM,
+        cap_height=744,
+        x_height=608,
+    )
 
     gf_ttf_dir = ROOT / "fonts" / "ttf"
     gf_web_dir = ROOT / "fonts" / "webfonts"
@@ -263,23 +350,16 @@ def main() -> None:
     for d in (gf_ttf_dir, gf_web_dir, dist_fonts_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    ttf_path = dist_fonts_dir / f"{STEM}.ttf"
-    woff_path = dist_fonts_dir / f"{STEM}.woff"
-    woff2_path = dist_fonts_dir / f"{STEM}.woff2"
+    ttf_path, woff_path, woff2_path = save_font_formats(
+        ttf, STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
+    )
+    pix_ttf_path, pix_woff_path, pix_woff2_path = save_font_formats(
+        pixel_ttf, PIXEL_STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
+    )
 
-    ttf.flavor = None
-    ttf.save(ttf_path)
-    shutil.copy2(ttf_path, gf_ttf_dir / f"{STEM}.ttf")
-
-    ttf.flavor = "woff"
-    ttf.save(woff_path)
-
-    ttf.flavor = "woff2"
-    ttf.save(woff2_path)
-    shutil.copy2(woff2_path, gf_web_dir / f"{STEM}.woff2")
-
-    # Verify exact glyph outlines from src/hangrygrotesk.svg
+    # Verify exact glyph outlines from src/hangrygrotesk.svg and src/hangrygroteskpixel.svg
     reloaded = TTFont(ttf_path)
+    reloaded_pix = TTFont(pix_ttf_path)
     expected_codes = sorted([
         32, 45, 46,
         *range(48, 58),
@@ -288,18 +368,31 @@ def main() -> None:
         160,
     ])
     assert sorted(reloaded.getBestCmap().keys()) == expected_codes
+    assert sorted(reloaded_pix.getBestCmap().keys()) == expected_codes
     assert reloaded["glyf"]["A"].yMin == 0
     assert reloaded["glyf"]["A"].yMax == 762
     assert reloaded["glyf"]["g"].yMin < 0
     assert reloaded["glyf"]["eight"].yMin == 0
     assert reloaded["glyf"]["eight"].yMax == 762
     assert reloaded["glyf"]["eight"].numberOfContours == 2
+    assert reloaded_pix["glyf"]["A"].yMin == 0
+    assert reloaded_pix["glyf"]["A"].yMax == 744
 
-    css_text = f"""/* {FAMILY} Regular | {pkg["author"]["name"]} | {pkg["license"]} */
+    css_text = f"""/* {FAMILY} & {PIXEL_FAMILY} | {pkg["author"]["name"]} | {pkg["license"]} */
 @font-face {{
   font-family: "{FAMILY}";
   src: url("./fonts/{STEM}.woff2") format("woff2"),
        url("./fonts/{STEM}.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020, U+002D-002E, U+0030-0039, U+0041-005A, U+0061-007A, U+00A0;
+}}
+
+@font-face {{
+  font-family: "{PIXEL_FAMILY}";
+  src: url("./fonts/{PIXEL_STEM}.woff2") format("woff2"),
+       url("./fonts/{PIXEL_STEM}.woff") format("woff");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -314,6 +407,9 @@ def main() -> None:
         f"fonts/{STEM}.ttf": ttf_path.read_bytes(),
         f"fonts/{STEM}.woff": woff_path.read_bytes(),
         f"fonts/{STEM}.woff2": woff2_path.read_bytes(),
+        f"fonts/{PIXEL_STEM}.ttf": pix_ttf_path.read_bytes(),
+        f"fonts/{PIXEL_STEM}.woff": pix_woff_path.read_bytes(),
+        f"fonts/{PIXEL_STEM}.woff2": pix_woff2_path.read_bytes(),
         "hangrygrotesk.css": css_text.encode("utf-8"),
         "preview.html": (ROOT / "src" / "preview.html").read_bytes(),
         "README.md": (ROOT / "README.md").read_bytes(),
@@ -327,7 +423,7 @@ def main() -> None:
             info.external_attr = 0o644 << 16
             zf.writestr(info, data)
 
-    print(f"Built and validated UFO, TTF, WOFF, WOFF2, metadata, and ZIP: {zip_path}")
+    print(f"Built and validated Regular & Pixel UFO, TTF, WOFF, WOFF2, metadata, and ZIP: {zip_path}")
 
 
 if __name__ == "__main__":
