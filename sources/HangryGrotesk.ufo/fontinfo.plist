@@ -33,9 +33,9 @@
     <key>openTypeNameSampleText</key>
     <string>The quick brown fox jumps over the lazy dog. 0123456789</string>
     <key>openTypeNameUniqueID</key>
-    <string>HangryGrotesk-Regular-0.1.0</string>
+    <string>HangryGrotesk-Regular-0.2.0</string>
     <key>openTypeNameVersion</key>
-    <string>Version 1.001</string>
+    <string>Version 1.002</string>
     <key>openTypeOS2Selection</key>
     <array>
       <integer>7</integer>
@@ -75,7 +75,7 @@
     <key>versionMajor</key>
     <integer>1</integer>
     <key>versionMinor</key>
-    <integer>1</integer>
+    <integer>2</integer>
     <key>xHeight</key>
     <integer>598</integer>
   </dict>
