@@ -1,6 +1,6 @@
 {
   "name": "hangrygrotesk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A geometric stencil display font suite (Grotesk, Serif, Pixel, Dotted, Diamond) across 9 weights (100–900), available as OTF, TTF, Variable, WOFF, and WOFF2.",
   "repository": {
     "type": "git",
@@ -12,15 +12,42 @@
   },
   "type": "module",
   "license": "OFL-1.1",
-  "author": { "name": "Rajeev Puri" },
-  "keywords": ["font", "typeface", "typography", "stencil", "grotesk", "serif", "display", "variable-font", "otf", "webfont", "ttf", "woff", "woff2"],
+  "author": {
+    "name": "Rajeev Puri"
+  },
+  "keywords": [
+    "font",
+    "typeface",
+    "typography",
+    "stencil",
+    "grotesk",
+    "serif",
+    "display",
+    "variable-font",
+    "otf",
+    "webfont",
+    "ttf",
+    "woff",
+    "woff2"
+  ],
   "style": "./dist/hangrygrotesk.css",
   "exports": {
     ".": "./dist/hangrygrotesk.css",
     "./fonts/*": "./dist/fonts/*"
   },
-  "sideEffects": ["**/*.css"],
-  "files": ["dist/fonts", "dist/hangrygrotesk.css", "src/hangrygrotesk.svg", "src/hangrygroteskserif.svg", "src/hangrygroteskpixel.svg", "src/hangrygroteskdotted.svg", "src/hangrygroteskdiamond.svg", "OFL.txt"],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist/fonts",
+    "dist/hangrygrotesk.css",
+    "src/hangrygrotesk.svg",
+    "src/hangrygroteskserif.svg",
+    "src/hangrygroteskpixel.svg",
+    "src/hangrygroteskdotted.svg",
+    "src/hangrygroteskdiamond.svg",
+    "OFL.txt"
+  ],
   "scripts": {
     "build": "python3 -c 'import ufo2ft, pathops' 2>/dev/null && python3 src/build_font.py || .venv/bin/python3 src/build_font.py",
     "check": "python3 -m py_compile src/build_font.py",
