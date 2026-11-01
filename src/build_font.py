@@ -12,15 +12,19 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+import pathops
 import ufo2ft
 import ufoLib2
 from fontTools.agl import UV2AGL
+from fontTools.otlLib.builder import buildStatTable
 from fontTools.pens.pointPen import ReverseContourPointPen
 from fontTools.pens.recordingPen import RecordingPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.svgLib.path import parse_path
 from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables import ttProgram
+from fontTools.ttLib.tables._f_v_a_r import Axis, NamedInstance
+from fontTools.ttLib.tables._g_v_a_r import TupleVariation
 
 ROOT = Path(__file__).resolve().parent.parent
 FAMILY = "Hangry Grotesk"
@@ -1084,6 +1088,7 @@ def rasterize_extra_glyphs_to_grid(
     dst_ufo: ufoLib2.Font,
     tile_mode: str,
     sidebearing: int = 68,
+    tile_size: float | None = None,
 ) -> None:
     """Rasterize all non-base glyphs from src_ufo onto the 34-UPEM Pixel/Dotted/Diamond grid in dst_ufo."""
     existing_names = set(dst_ufo.keys())
@@ -1118,16 +1123,18 @@ def rasterize_extra_glyphs_to_grid(
             for c in range(c_min, c_max + 1):
                 cx = c * step + 17.0
                 if any(point_in_glyph_rings(cx + dx, cy + dy, shells, holes) for dx, dy in probe_offsets):
-                    x0 = c * step + 2
-                    y0 = r * step + 2
                     if tile_mode == "pixel":
-                        add_rect(pen, x0, y0, x0 + 30, y0 + 30)
+                        sz = tile_size if tile_size is not None else 30.0
+                        half = sz / 2.0
+                        add_rect(pen, cx - half, cy - half, cx + half, cy + half)
                     elif tile_mode == "dotted":
-                        add_circle(pen, cx, cy, 14, clockwise=True)
+                        rad = tile_size if tile_size is not None else 14.0
+                        add_circle(pen, cx, cy, rad, clockwise=True)
                     elif tile_mode == "diamond":
+                        rad = tile_size if tile_size is not None else 16.0
                         add_poly(
                             pen,
-                            [(cx, cy + 16), (cx + 16, cy), (cx, cy - 16), (cx - 16, cy)],
+                            [(cx, cy + rad), (cx + rad, cy), (cx, cy - rad), (cx - rad, cy)],
                             clockwise=True,
                         )
         if dst_g.contours:
@@ -1135,6 +1142,73 @@ def rasterize_extra_glyphs_to_grid(
         else:
             copy_transformed(src_g, dst_g.getPen())
             normalize_lsb(dst_g, sidebearing, sidebearing)
+
+
+def build_weighted_outline_ufo(src_ufo: ufoLib2.Font, delta_upem: float) -> ufoLib2.Font:
+    """Create a new UFO by offsetting all glyph contours in src_ufo by delta_upem."""
+    dst = ufoLib2.Font()
+    for gname in src_ufo.keys():
+        src_g = src_ufo[gname]
+        dst_g = dst.newGlyph(gname)
+        dst_g.unicodes = list(src_g.unicodes)
+        dst_g.width = src_g.width
+        if not src_g.contours or gname == ".notdef" or abs(delta_upem) < 1e-3:
+            for c in src_g.contours:
+                c.draw(dst_g.getPen())
+            continue
+        sk_path = pathops.Path()
+        src_g.draw(sk_path.getPen())
+        sk_path.simplify(fix_winding=True)
+        stroke_path = pathops.Path(sk_path)
+        stroke_path.stroke(
+            abs(delta_upem) * 2.0,
+            pathops.LineCap.BUTT_CAP,
+            pathops.LineJoin.MITER_JOIN,
+            4.0,
+        )
+        if delta_upem > 0:
+            res = pathops.op(sk_path, stroke_path, pathops.PathOp.UNION)
+        else:
+            res = pathops.op(sk_path, stroke_path, pathops.PathOp.DIFFERENCE)
+        res.simplify(fix_winding=True)
+        res.draw(dst_g.getPen())
+    return dst
+
+
+def build_weighted_matrix_ufo(
+    base_matrix_ufo: ufoLib2.Font,
+    tile_mode: str,
+    tile_size: float,
+) -> ufoLib2.Font:
+    """Create a weighted Pixel, Dotted, or Diamond UFO by resizing each discrete 34-UPEM cell tile around its center."""
+    dst = ufoLib2.Font()
+    for gname in base_matrix_ufo.keys():
+        src_g = base_matrix_ufo[gname]
+        dst_g = dst.newGlyph(gname)
+        dst_g.unicodes = list(src_g.unicodes)
+        dst_g.width = src_g.width
+        if not src_g.contours or gname == ".notdef" or src_g.width == 0:
+            for c in src_g.contours:
+                c.draw(dst_g.getPen())
+            continue
+        pen = dst_g.getPen()
+        for c in src_g.contours:
+            xs = [pt.x for pt in c.points]
+            ys = [pt.y for pt in c.points]
+            cx = (min(xs) + max(xs)) / 2.0
+            cy = (min(ys) + max(ys)) / 2.0
+            if tile_mode == "pixel":
+                half = tile_size / 2.0
+                add_rect(pen, cx - half, cy - half, cx + half, cy + half)
+            elif tile_mode == "dotted":
+                add_circle(pen, cx, cy, tile_size, clockwise=True)
+            elif tile_mode == "diamond":
+                add_poly(
+                    pen,
+                    [(cx, cy + tile_size), (cx + tile_size, cy), (cx, cy - tile_size), (cx - tile_size, cy)],
+                    clockwise=True,
+                )
+    return dst
 
 
 def set_ufo_metadata(
@@ -1146,15 +1220,17 @@ def set_ufo_metadata(
     stem: str = STEM,
     cap_height: int = 762,
     x_height: int = 598,
+    style_name: str = "Regular",
+    weight_class: int = 400,
 ) -> None:
     raw_major, raw_minor = (int(x) for x in pkg["version"].split(".")[:2])
     major = max(1, raw_major)
     minor = raw_minor
     info = ufo.info
     info.familyName = family_name
-    info.styleName = "Regular"
-    info.styleMapFamilyName = family_name
-    info.styleMapStyleName = "regular"
+    info.styleName = style_name
+    info.styleMapFamilyName = family_name if style_name in ("Regular", "Bold") else f"{family_name} {style_name}"
+    info.styleMapStyleName = "bold" if style_name == "Bold" else "regular"
     info.versionMajor = major
     info.versionMinor = minor
     info.unitsPerEm = 1000
@@ -1180,7 +1256,7 @@ def set_ufo_metadata(
     info.openTypeOS2TypoLineGap = 0
     info.openTypeOS2WinAscent = 950
     info.openTypeOS2WinDescent = 250
-    info.openTypeOS2WeightClass = 400
+    info.openTypeOS2WeightClass = weight_class
     info.openTypeOS2WidthClass = 5
     info.openTypeOS2Type = []
     info.openTypeOS2VendorID = "ASCX"
@@ -1213,18 +1289,25 @@ def postprocess_ttf(
     stem: str = STEM,
     cap_height: int = 762,
     x_height: int = 598,
+    style_name: str = "Regular",
+    weight_class: int = 400,
 ) -> None:
     raw_major, raw_minor = (int(x) for x in pkg["version"].split(".")[:2])
     major = max(1, raw_major)
     minor = raw_minor
     version_str = f"Version {major}.{minor:03d}"
 
-    y_max = max((g.yMax for g in ttf["glyf"].glyphs.values() if hasattr(g, "yMax")), default=950)
-    y_min = min((g.yMin for g in ttf["glyf"].glyphs.values() if hasattr(g, "yMin")), default=-250)
-    ttf["head"].yMax = y_max
-    ttf["head"].yMin = y_min
+    is_ttf = "glyf" in ttf
+    if is_ttf:
+        y_max = max((g.yMax for g in ttf["glyf"].glyphs.values() if hasattr(g, "yMax")), default=950)
+        y_min = min((g.yMin for g in ttf["glyf"].glyphs.values() if hasattr(g, "yMin")), default=-250)
+        ttf["head"].yMax = y_max
+        ttf["head"].yMin = y_min
+    else:
+        y_max = getattr(ttf["head"], "yMax", 950)
+        y_min = getattr(ttf["head"], "yMin", -250)
     ttf["head"].fontRevision = float(f"{major}.{minor:03d}")
-    ttf["head"].macStyle = 0
+    ttf["head"].macStyle = 1 if weight_class == 700 else 0
 
     asc = max(850, y_max)
     desc = min(-250, y_min)
@@ -1239,8 +1322,9 @@ def postprocess_ttf(
     os2.sTypoLineGap = 0
     os2.usWinAscent = max(850, y_max)
     os2.usWinDescent = max(250, abs(y_min))
+    os2.usWeightClass = weight_class
     os2.fsType = 0
-    os2.fsSelection = 0x00C0
+    os2.fsSelection = 0x00A0 if weight_class == 700 else 0x00C0
     os2.achVendID = "ASCX"
     os2.sxHeight = x_height
     os2.sCapHeight = cap_height
@@ -1249,10 +1333,10 @@ def postprocess_ttf(
     name_table.names = []
     records = {
         0: copyright_str,
-        1: family_name,
-        2: "Regular",
+        1: family_name if style_name in ("Regular", "Bold") else f"{family_name} {style_name}",
+        2: "Bold" if style_name == "Bold" else "Regular",
         3: f"{stem}-{pkg['version']}",
-        4: f"{family_name} Regular",
+        4: f"{family_name} {style_name}",
         5: version_str,
         6: stem,
         8: pkg["author"]["name"],
@@ -1262,51 +1346,262 @@ def postprocess_ttf(
         14: "https://openfontlicense.org",
         19: "The quick brown fox jumps over the lazy dog. 0123456789",
     }
+    if style_name not in ("Regular", "Bold"):
+        records[16] = family_name
+        records[17] = style_name
     for name_id, value in records.items():
         name_table.setName(value, name_id, 3, 1, 0x0409)
     ttf["name"] = name_table
 
-    gasp = newTable("gasp")
-    gasp.version = 1
-    gasp.gaspRange = {0xFFFF: 0x000F}
-    ttf["gasp"] = gasp
+    if is_ttf:
+        gasp = newTable("gasp")
+        gasp.version = 1
+        gasp.gaspRange = {0xFFFF: 0x000F}
+        ttf["gasp"] = gasp
 
-    prog = ttProgram.Program()
-    prog.fromBytecode([0xB8, 0x01, 0xFF, 0x85, 0xB0, 0x04, 0x8D])
-    prep = newTable("prep")
-    prep.program = prog
-    ttf["prep"] = prep
+        prog = ttProgram.Program()
+        prog.fromBytecode([0xB8, 0x01, 0xFF, 0x85, 0xB0, 0x04, 0x8D])
+        prep = newTable("prep")
+        prep.program = prog
+        ttf["prep"] = prep
 
-    ttf["maxp"].maxZones = 2
+        ttf["maxp"].maxZones = 2
 
     meta = newTable("meta")
     meta.data = {"dlng": "Latn", "slng": "Latn"}
     ttf["meta"] = meta
 
 
+def compute_outline_glyph_deltas(
+    glyf_glyph, delta_thin: float, delta_black: float
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]] | None:
+    if not glyf_glyph.isComposite() and getattr(glyf_glyph, "numberOfContours", 0) > 0:
+        coords = glyf_glyph.coordinates
+        end_pts = glyf_glyph.endPtsOfContours
+        thin_deltas: list[tuple[int, int]] = []
+        black_deltas: list[tuple[int, int]] = []
+        start = 0
+        for end in end_pts:
+            pts = [(coords[i][0], coords[i][1]) for i in range(start, end + 1)]
+            m = len(pts)
+            for i in range(m):
+                px, py = pts[i]
+                prev_x, prev_y = pts[(i - 1) % m]
+                next_x, next_y = pts[(i + 1) % m]
+                k = 1
+                while k < m and abs(px - prev_x) < 1e-3 and abs(py - prev_y) < 1e-3:
+                    prev_x, prev_y = pts[(i - k) % m]
+                    k += 1
+                k = 1
+                while k < m and abs(next_x - px) < 1e-3 and abs(next_y - py) < 1e-3:
+                    next_x, next_y = pts[(i + k) % m]
+                    k += 1
+                dx1, dy1 = px - prev_x, py - prev_y
+                l1 = math.hypot(dx1, dy1) or 1.0
+                n1x, n1y = -dy1 / l1, dx1 / l1
+
+                dx2, dy2 = next_x - px, next_y - py
+                l2 = math.hypot(dx2, dy2) or 1.0
+                n2x, n2y = -dy2 / l2, dx2 / l2
+
+                dot = max(-0.8, min(1.0, n1x * n2x + n1y * n2y))
+                mx = (n1x + n2x) / (1.0 + dot)
+                my = (n1y + n2y) / (1.0 + dot)
+                ml = math.hypot(mx, my)
+                if ml > 1.35:
+                    mx = mx / ml * 1.35
+                    my = my / ml * 1.35
+                thin_deltas.append((round(mx * delta_thin), round(my * delta_thin)))
+                black_deltas.append((round(mx * delta_black), round(my * delta_black)))
+            start = end + 1
+        thin_deltas.extend([(0, 0)] * 4)
+        black_deltas.extend([(0, 0)] * 4)
+        return thin_deltas, black_deltas
+    return None
+
+
+def compute_matrix_glyph_deltas(
+    glyf_glyph, scale_thin: float, scale_black: float
+) -> tuple[list[tuple[int, int]], list[tuple[int, int]]] | None:
+    if not glyf_glyph.isComposite() and getattr(glyf_glyph, "numberOfContours", 0) > 0:
+        coords = glyf_glyph.coordinates
+        end_pts = glyf_glyph.endPtsOfContours
+        thin_deltas: list[tuple[int, int]] = []
+        black_deltas: list[tuple[int, int]] = []
+        start = 0
+        for end in end_pts:
+            pts = [(coords[i][0], coords[i][1]) for i in range(start, end + 1)]
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            cx = (min(xs) + max(xs)) / 2.0
+            cy = (min(ys) + max(ys)) / 2.0
+            for px, py in pts:
+                thin_deltas.append((round((px - cx) * (scale_thin - 1.0)), round((py - cy) * (scale_thin - 1.0))))
+                black_deltas.append((round((px - cx) * (scale_black - 1.0)), round((py - cy) * (scale_black - 1.0))))
+            start = end + 1
+        thin_deltas.extend([(0, 0)] * 4)
+        black_deltas.extend([(0, 0)] * 4)
+        return thin_deltas, black_deltas
+    return None
+
+
+def save_variable_font_formats(
+    base_ufo: ufoLib2.Font,
+    pkg: dict,
+    copyright_str: str,
+    license_str: str,
+    family_name: str,
+    fam_prefix: str,
+    cap_height: int,
+    x_height: int,
+    mode: str,
+    t_mode: str | None,
+    fonts_fam_dir: Path,
+    dist_fam_dir: Path,
+) -> tuple[Path, Path]:
+    var_stem = f"{fam_prefix}-VariableFont_wght"
+    var_ttf = ufo2ft.compileTTF(base_ufo, removeOverlaps=(mode == "outline"), reverseDirection=False, inplace=False)
+    postprocess_ttf(
+        var_ttf,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=family_name,
+        stem=var_stem,
+        cap_height=cap_height,
+        x_height=x_height,
+        style_name="Regular",
+        weight_class=400,
+    )
+
+    fvar = newTable("fvar")
+    axis = Axis()
+    axis.axisTag = "wght"
+    axis.minValue = 100.0
+    axis.defaultValue = 400.0
+    axis.maxValue = 900.0
+    axis.axisNameID = var_ttf["name"].addName("Weight")
+    fvar.axes = [axis]
+
+    instances = [
+        ("Thin", 100.0),
+        ("ExtraLight", 200.0),
+        ("Light", 300.0),
+        ("Regular", 400.0),
+        ("Medium", 500.0),
+        ("SemiBold", 600.0),
+        ("Bold", 700.0),
+        ("ExtraBold", 800.0),
+        ("Black", 900.0),
+    ]
+    for inst_name, w_val in instances:
+        inst = NamedInstance()
+        inst.subfamilyNameID = var_ttf["name"].addName(inst_name)
+        inst.postscriptNameID = var_ttf["name"].addName(f"{fam_prefix}-{inst_name}")
+        inst.coordinates = {"wght": w_val}
+        fvar.instances.append(inst)
+    var_ttf["fvar"] = fvar
+
+    gvar = newTable("gvar")
+    gvar.version = 1
+    gvar.reserved = 0
+    gvar.variations = {}
+    glyf = var_ttf["glyf"]
+
+    if mode == "outline":
+        delta_thin, delta_black = -30.0, 25.0
+    elif t_mode == "pixel":
+        scale_thin, scale_black = 14.0 / 30.0, 36.0 / 30.0
+    elif t_mode == "dotted":
+        scale_thin, scale_black = 7.0 / 14.0, 17.4 / 14.0
+    else:
+        scale_thin, scale_black = 8.0 / 16.0, 20.0 / 16.0
+
+    for gname in var_ttf.getGlyphOrder():
+        if gname == ".notdef":
+            gvar.variations[gname] = []
+            continue
+        g = glyf[gname]
+        if mode == "outline":
+            res = compute_outline_glyph_deltas(g, delta_thin, delta_black)
+        else:
+            res = compute_matrix_glyph_deltas(g, scale_thin, scale_black)
+        if res:
+            td, bd = res
+            gvar.variations[gname] = [
+                TupleVariation({"wght": (-1.0, -1.0, 0.0)}, td),
+                TupleVariation({"wght": (0.0, 1.0, 1.0)}, bd),
+            ]
+        else:
+            gvar.variations[gname] = []
+    var_ttf["gvar"] = gvar
+
+    buildStatTable(
+        var_ttf,
+        axes=[
+            dict(
+                tag="wght",
+                name="Weight",
+                values=[
+                    dict(value=w_val, name=inst_name, flags=0x2 if w_val == 400.0 else 0)
+                    for inst_name, w_val in instances
+                ],
+            )
+        ],
+    )
+
+    fonts_var_dir = fonts_fam_dir / "variable"
+    dist_var_dir = dist_fam_dir / "variable"
+    fonts_var_dir.mkdir(parents=True, exist_ok=True)
+    dist_var_dir.mkdir(parents=True, exist_ok=True)
+
+    var_ttf_path = dist_var_dir / f"{var_stem}.ttf"
+    var_woff2_path = dist_var_dir / f"{var_stem}.woff2"
+
+    var_ttf.flavor = None
+    var_ttf.save(var_ttf_path)
+    shutil.copy2(var_ttf_path, fonts_var_dir / f"{var_stem}.ttf")
+
+    var_ttf.flavor = "woff2"
+    var_ttf.save(var_woff2_path)
+    shutil.copy2(var_woff2_path, fonts_var_dir / f"{var_stem}.woff2")
+
+    return var_ttf_path, var_woff2_path
+
+
 def save_font_formats(
     ttf: TTFont,
+    otf: TTFont,
     stem: str,
-    dist_fonts_dir: Path,
-    gf_ttf_dir: Path,
-    gf_web_dir: Path,
-) -> tuple[Path, Path, Path]:
-    ttf_path = dist_fonts_dir / f"{stem}.ttf"
-    woff_path = dist_fonts_dir / f"{stem}.woff"
-    woff2_path = dist_fonts_dir / f"{stem}.woff2"
+    fonts_fam_dir: Path,
+    dist_fam_dir: Path,
+) -> tuple[Path, Path, Path, Path]:
+    for base_d in (fonts_fam_dir, dist_fam_dir):
+        for sub in ("otf", "ttf", "variable", "webfonts"):
+            (base_d / sub).mkdir(parents=True, exist_ok=True)
+
+    otf_path = dist_fam_dir / "otf" / f"{stem}.otf"
+    ttf_path = dist_fam_dir / "ttf" / f"{stem}.ttf"
+    woff_path = dist_fam_dir / "webfonts" / f"{stem}.woff"
+    woff2_path = dist_fam_dir / "webfonts" / f"{stem}.woff2"
+
+    otf.flavor = None
+    otf.save(otf_path)
+    shutil.copy2(otf_path, fonts_fam_dir / "otf" / f"{stem}.otf")
 
     ttf.flavor = None
     ttf.save(ttf_path)
-    shutil.copy2(ttf_path, gf_ttf_dir / f"{stem}.ttf")
+    shutil.copy2(ttf_path, fonts_fam_dir / "ttf" / f"{stem}.ttf")
 
     ttf.flavor = "woff"
     ttf.save(woff_path)
+    shutil.copy2(woff_path, fonts_fam_dir / "webfonts" / f"{stem}.woff")
 
     ttf.flavor = "woff2"
     ttf.save(woff2_path)
-    shutil.copy2(woff2_path, gf_web_dir / f"{stem}.woff2")
+    shutil.copy2(woff2_path, fonts_fam_dir / "webfonts" / f"{stem}.woff2")
 
-    return ttf_path, woff_path, woff2_path
+    return otf_path, ttf_path, woff_path, woff2_path
 
 
 def main() -> None:
@@ -1326,7 +1621,7 @@ def main() -> None:
     sources_dir = ROOT / "sources"
     sources_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Build Regular UFO & TTF from src/hangrygrotesk.svg + GF_Latin_Core
+    # 1. Build Regular UFO & TTF/OTF from src/hangrygrotesk.svg + GF_Latin_Core
     ufo = ufoLib2.Font()
     build_svg_glyphs(ufo, ROOT / "src" / "hangrygrotesk.svg", sidebearing=60)
     build_gf_latin_core_glyphs(ufo, is_serif=False, sidebearing=60)
@@ -1339,8 +1634,10 @@ def main() -> None:
 
     ttf = ufo2ft.compileTTF(ufo, removeOverlaps=False, reverseDirection=False, inplace=False)
     postprocess_ttf(ttf, pkg, copyright_str, license_str)
+    otf = ufo2ft.compileOTF(ufo, removeOverlaps=False, inplace=False, optimizeCFF=ufo2ft.CFFOptimization.NONE)
+    postprocess_ttf(otf, pkg, copyright_str, license_str)
 
-    # 2. Build Serif UFO & TTF from src/hangrygroteskserif.svg + GF_Latin_Core
+    # 2. Build Serif UFO & TTF/OTF from src/hangrygroteskserif.svg + GF_Latin_Core
     serif_ufo = ufoLib2.Font()
     build_svg_glyphs(serif_ufo, ROOT / "src" / "hangrygroteskserif.svg", sidebearing=60)
     build_gf_latin_core_glyphs(serif_ufo, is_serif=True, sidebearing=60)
@@ -1371,8 +1668,21 @@ def main() -> None:
         cap_height=762,
         x_height=598,
     )
+    serif_otf = ufo2ft.compileOTF(
+        serif_ufo, removeOverlaps=True, inplace=False, optimizeCFF=ufo2ft.CFFOptimization.NONE
+    )
+    postprocess_ttf(
+        serif_otf,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=SERIF_FAMILY,
+        stem=SERIF_STEM,
+        cap_height=762,
+        x_height=598,
+    )
 
-    # 3. Build Pixel UFO & TTF from src/hangrygroteskpixel.svg + 34u pixel-rasterized GF_Latin_Core
+    # 3. Build Pixel UFO & TTF/OTF from src/hangrygroteskpixel.svg + 34u pixel-rasterized GF_Latin_Core
     pixel_ufo = ufoLib2.Font()
     build_svg_glyphs(pixel_ufo, ROOT / "src" / "hangrygroteskpixel.svg", sidebearing=68)
     rasterize_extra_glyphs_to_grid(ufo, pixel_ufo, tile_mode="pixel", sidebearing=68)
@@ -1405,8 +1715,21 @@ def main() -> None:
         cap_height=744,
         x_height=608,
     )
+    pixel_otf = ufo2ft.compileOTF(
+        pixel_ufo, removeOverlaps=False, inplace=False, optimizeCFF=ufo2ft.CFFOptimization.NONE
+    )
+    postprocess_ttf(
+        pixel_otf,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=PIXEL_FAMILY,
+        stem=PIXEL_STEM,
+        cap_height=744,
+        x_height=608,
+    )
 
-    # 4. Build Dotted UFO & TTF from src/hangrygroteskdotted.svg + 34u dot-rasterized GF_Latin_Core
+    # 4. Build Dotted UFO & TTF/OTF from src/hangrygroteskdotted.svg + 34u dot-rasterized GF_Latin_Core
     dotted_ufo = ufoLib2.Font()
     build_svg_glyphs(dotted_ufo, ROOT / "src" / "hangrygroteskdotted.svg", sidebearing=68)
     rasterize_extra_glyphs_to_grid(ufo, dotted_ufo, tile_mode="dotted", sidebearing=68)
@@ -1439,8 +1762,21 @@ def main() -> None:
         cap_height=742,
         x_height=606,
     )
+    dotted_otf = ufo2ft.compileOTF(
+        dotted_ufo, removeOverlaps=False, inplace=False, optimizeCFF=ufo2ft.CFFOptimization.NONE
+    )
+    postprocess_ttf(
+        dotted_otf,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=DOTTED_FAMILY,
+        stem=DOTTED_STEM,
+        cap_height=742,
+        x_height=606,
+    )
 
-    # 5. Build Diamond UFO & TTF from src/hangrygroteskdiamond.svg + 34u diamond-rasterized GF_Latin_Core
+    # 5. Build Diamond UFO & TTF/OTF from src/hangrygroteskdiamond.svg + 34u diamond-rasterized GF_Latin_Core
     diamond_ufo = ufoLib2.Font()
     build_svg_glyphs(diamond_ufo, ROOT / "src" / "hangrygroteskdiamond.svg", sidebearing=68)
     rasterize_extra_glyphs_to_grid(ufo, diamond_ufo, tile_mode="diamond", sidebearing=68)
@@ -1473,30 +1809,144 @@ def main() -> None:
         cap_height=746,
         x_height=610,
     )
+    diamond_otf = ufo2ft.compileOTF(
+        diamond_ufo, removeOverlaps=False, inplace=False, optimizeCFF=ufo2ft.CFFOptimization.NONE
+    )
+    postprocess_ttf(
+        diamond_otf,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=DIAMOND_FAMILY,
+        stem=DIAMOND_STEM,
+        cap_height=746,
+        x_height=610,
+    )
 
-    gf_ttf_dir = ROOT / "fonts" / "ttf"
-    gf_web_dir = ROOT / "fonts" / "webfonts"
+    fonts_root = ROOT / "fonts"
     dist_fonts_dir = ROOT / "dist" / "fonts"
-    for d in (gf_ttf_dir, gf_web_dir, dist_fonts_dir):
-        d.mkdir(parents=True, exist_ok=True)
+    if fonts_root.exists():
+        shutil.rmtree(fonts_root)
+    if dist_fonts_dir.exists():
+        shutil.rmtree(dist_fonts_dir)
+    fonts_root.mkdir(parents=True, exist_ok=True)
+    dist_fonts_dir.mkdir(parents=True, exist_ok=True)
 
-    ttf_path, woff_path, woff2_path = save_font_formats(
-        ttf, STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
+    otf_path, ttf_path, woff_path, woff2_path = save_font_formats(
+        ttf, otf, STEM, fonts_root / "HangryGrotesk", dist_fonts_dir / "HangryGrotesk"
     )
-    ser_ttf_path, ser_woff_path, ser_woff2_path = save_font_formats(
-        serif_ttf, SERIF_STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
+    ser_otf_path, ser_ttf_path, ser_woff_path, ser_woff2_path = save_font_formats(
+        serif_ttf, serif_otf, SERIF_STEM, fonts_root / "HangryGroteskSerif", dist_fonts_dir / "HangryGroteskSerif"
     )
-    pix_ttf_path, pix_woff_path, pix_woff2_path = save_font_formats(
-        pixel_ttf, PIXEL_STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
+    pix_otf_path, pix_ttf_path, pix_woff_path, pix_woff2_path = save_font_formats(
+        pixel_ttf, pixel_otf, PIXEL_STEM, fonts_root / "HangryGroteskPixel", dist_fonts_dir / "HangryGroteskPixel"
     )
-    dot_ttf_path, dot_woff_path, dot_woff2_path = save_font_formats(
-        dotted_ttf, DOTTED_STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
+    dot_otf_path, dot_ttf_path, dot_woff_path, dot_woff2_path = save_font_formats(
+        dotted_ttf, dotted_otf, DOTTED_STEM, fonts_root / "HangryGroteskDotted", dist_fonts_dir / "HangryGroteskDotted"
     )
-    dia_ttf_path, dia_woff_path, dia_woff2_path = save_font_formats(
-        diamond_ttf, DIAMOND_STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
+    dia_otf_path, dia_ttf_path, dia_woff_path, dia_woff2_path = save_font_formats(
+        diamond_ttf,
+        diamond_otf,
+        DIAMOND_STEM,
+        fonts_root / "HangryGroteskDiamond",
+        dist_fonts_dir / "HangryGroteskDiamond",
     )
 
-    # Validate full Latin + Punctuation coverage across all 5 styles
+    # 6. Build all 8 non-Regular weights (100–900: Thin, ExtraLight, Light, Medium, SemiBold, Bold, ExtraBold, Black) + Variable Fonts across all 5 families
+    extra_weight_specs = [
+        ("Thin", 100, -30.0, 14.0, 7.0, 8.0),
+        ("ExtraLight", 200, -22.5, 18.0, 9.0, 10.0),
+        ("Light", 300, -15.0, 24.0, 11.5, 13.0),
+        ("Medium", 500, 7.0, 31.6, 15.0, 17.0),
+        ("SemiBold", 600, 12.5, 32.8, 15.6, 17.8),
+        ("Bold", 700, 17.5, 34.0, 16.2, 18.5),
+        ("ExtraBold", 800, 21.5, 35.0, 16.8, 19.2),
+        ("Black", 900, 25.0, 36.0, 17.4, 20.0),
+    ]
+    family_configs = [
+        (FAMILY, "HangryGrotesk", ufo, 762, 598, "outline", None),
+        (SERIF_FAMILY, "HangryGroteskSerif", serif_ufo, 762, 598, "outline", None),
+        (PIXEL_FAMILY, "HangryGroteskPixel", pixel_ufo, 744, 608, "matrix", "pixel"),
+        (DOTTED_FAMILY, "HangryGroteskDotted", dotted_ufo, 742, 606, "matrix", "dotted"),
+        (DIAMOND_FAMILY, "HangryGroteskDiamond", diamond_ufo, 746, 610, "matrix", "diamond"),
+    ]
+    extra_saved_files: list[tuple[str, str, str, int, Path, Path, Path, Path]] = []
+    variable_saved_files: list[tuple[str, str, Path, Path]] = []
+
+    for fam_name, fam_prefix, base_u, cap_h, x_h, mode, t_mode in family_configs:
+        f_fam_dir = fonts_root / fam_prefix
+        d_fam_dir = dist_fonts_dir / fam_prefix
+        var_ttf_p, var_woff2_p = save_variable_font_formats(
+            base_u,
+            pkg,
+            copyright_str,
+            license_str,
+            family_name=fam_name,
+            fam_prefix=fam_prefix,
+            cap_height=cap_h,
+            x_height=x_h,
+            mode=mode,
+            t_mode=t_mode,
+            fonts_fam_dir=f_fam_dir,
+            dist_fam_dir=d_fam_dir,
+        )
+        variable_saved_files.append((fam_name, fam_prefix, var_ttf_p, var_woff2_p))
+
+        for w_name, w_num, d_upem, px_sz, dot_r, dia_r in extra_weight_specs:
+            w_stem = f"{fam_prefix}-{w_name}"
+            if mode == "outline":
+                w_ufo = build_weighted_outline_ufo(base_u, d_upem)
+            else:
+                sz = px_sz if t_mode == "pixel" else (dot_r if t_mode == "dotted" else dia_r)
+                w_ufo = build_weighted_matrix_ufo(base_u, t_mode, sz)
+            set_ufo_metadata(
+                w_ufo,
+                pkg,
+                copyright_str,
+                license_str,
+                family_name=fam_name,
+                stem=w_stem,
+                cap_height=cap_h,
+                x_height=x_h,
+                style_name=w_name,
+                weight_class=w_num,
+            )
+            w_ttf = ufo2ft.compileTTF(
+                w_ufo, removeOverlaps=False, reverseDirection=False, inplace=False
+            )
+            postprocess_ttf(
+                w_ttf,
+                pkg,
+                copyright_str,
+                license_str,
+                family_name=fam_name,
+                stem=w_stem,
+                cap_height=cap_h,
+                x_height=x_h,
+                style_name=w_name,
+                weight_class=w_num,
+            )
+            w_otf = ufo2ft.compileOTF(
+                w_ufo, removeOverlaps=False, inplace=False, optimizeCFF=ufo2ft.CFFOptimization.NONE
+            )
+            postprocess_ttf(
+                w_otf,
+                pkg,
+                copyright_str,
+                license_str,
+                family_name=fam_name,
+                stem=w_stem,
+                cap_height=cap_h,
+                x_height=x_h,
+                style_name=w_name,
+                weight_class=w_num,
+            )
+            w_otf_p, w_ttf_p, w_woff_p, w_woff2_p = save_font_formats(
+                w_ttf, w_otf, w_stem, f_fam_dir, d_fam_dir
+            )
+            extra_saved_files.append((fam_name, fam_prefix, w_stem, w_num, w_otf_p, w_ttf_p, w_woff_p, w_woff2_p))
+
+    # Validate full Latin + Punctuation coverage across all styles
     expected_cps = {cp for g in ufo for cp in g.unicodes}
     for check_path in (ttf_path, ser_ttf_path, pix_ttf_path, dot_ttf_path, dia_ttf_path):
         reloaded = TTFont(check_path)
@@ -1504,77 +1954,54 @@ def main() -> None:
         missing = expected_cps - cmap_cps
         assert not missing, f"{check_path.name} missing codepoints: {[hex(c) for c in sorted(missing)]}"
 
-    css_text = f"""/* {FAMILY}, {SERIF_FAMILY}, {PIXEL_FAMILY}, {DOTTED_FAMILY} & {DIAMOND_FAMILY} | {pkg["author"]["name"]} | {pkg["license"]} */
-@font-face {{
-  font-family: "{FAMILY}";
-  src: url("./fonts/{STEM}.woff2") format("woff2"),
-       url("./fonts/{STEM}.woff") format("woff");
-  font-weight: 400;
+    css_blocks = [
+        f"/* {FAMILY}, {SERIF_FAMILY}, {PIXEL_FAMILY}, {DOTTED_FAMILY} & {DIAMOND_FAMILY} (100–900 + Variable) | {pkg['author']['name']} | {pkg['license']} */"
+    ]
+    for fam_n, fam_p, _, _ in variable_saved_files:
+        css_blocks.append(
+            f"""@font-face {{
+  font-family: "{fam_n} Variable";
+  src: url("./fonts/{fam_p}/variable/{fam_p}-VariableFont_wght.woff2") format("woff2-variations");
+  font-weight: 100 900;
   font-style: normal;
   font-display: swap;
-}}
-
-@font-face {{
-  font-family: "{SERIF_FAMILY}";
-  src: url("./fonts/{SERIF_STEM}.woff2") format("woff2"),
-       url("./fonts/{SERIF_STEM}.woff") format("woff");
-  font-weight: 400;
+}}"""
+        )
+    all_css_faces = [
+        (FAMILY, "HangryGrotesk", STEM, 400),
+        (SERIF_FAMILY, "HangryGroteskSerif", SERIF_STEM, 400),
+        (PIXEL_FAMILY, "HangryGroteskPixel", PIXEL_STEM, 400),
+        (DOTTED_FAMILY, "HangryGroteskDotted", DOTTED_STEM, 400),
+        (DIAMOND_FAMILY, "HangryGroteskDiamond", DIAMOND_STEM, 400),
+        *((fam_n, fam_p, st_n, w_n) for fam_n, fam_p, st_n, w_n, _, _, _, _ in extra_saved_files),
+    ]
+    for fam_n, fam_p, st_n, w_n in all_css_faces:
+        css_blocks.append(
+            f"""@font-face {{
+  font-family: "{fam_n}";
+  src: url("./fonts/{fam_p}/webfonts/{st_n}.woff2") format("woff2"),
+       url("./fonts/{fam_p}/webfonts/{st_n}.woff") format("woff");
+  font-weight: {w_n};
   font-style: normal;
   font-display: swap;
-}}
-
-@font-face {{
-  font-family: "{PIXEL_FAMILY}";
-  src: url("./fonts/{PIXEL_STEM}.woff2") format("woff2"),
-       url("./fonts/{PIXEL_STEM}.woff") format("woff");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}}
-
-@font-face {{
-  font-family: "{DOTTED_FAMILY}";
-  src: url("./fonts/{DOTTED_STEM}.woff2") format("woff2"),
-       url("./fonts/{DOTTED_STEM}.woff") format("woff");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}}
-
-@font-face {{
-  font-family: "{DIAMOND_FAMILY}";
-  src: url("./fonts/{DIAMOND_STEM}.woff2") format("woff2"),
-       url("./fonts/{DIAMOND_STEM}.woff") format("woff");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}}
-"""
+}}"""
+        )
+    css_text = "\n\n".join(css_blocks) + "\n"
     (ROOT / "dist" / "hangrygrotesk.css").write_text(css_text, encoding="utf-8")
     shutil.copy2(ROOT / "src" / "preview.html", ROOT / "dist" / "preview.html")
 
     zip_path = ROOT / "dist" / f"HangryGrotesk-{pkg['version']}.zip"
-    zip_entries = {
-        f"fonts/{STEM}.ttf": ttf_path.read_bytes(),
-        f"fonts/{STEM}.woff": woff_path.read_bytes(),
-        f"fonts/{STEM}.woff2": woff2_path.read_bytes(),
-        f"fonts/{SERIF_STEM}.ttf": ser_ttf_path.read_bytes(),
-        f"fonts/{SERIF_STEM}.woff": ser_woff_path.read_bytes(),
-        f"fonts/{SERIF_STEM}.woff2": ser_woff2_path.read_bytes(),
-        f"fonts/{PIXEL_STEM}.ttf": pix_ttf_path.read_bytes(),
-        f"fonts/{PIXEL_STEM}.woff": pix_woff_path.read_bytes(),
-        f"fonts/{PIXEL_STEM}.woff2": pix_woff2_path.read_bytes(),
-        f"fonts/{DOTTED_STEM}.ttf": dot_ttf_path.read_bytes(),
-        f"fonts/{DOTTED_STEM}.woff": dot_woff_path.read_bytes(),
-        f"fonts/{DOTTED_STEM}.woff2": dot_woff2_path.read_bytes(),
-        f"fonts/{DIAMOND_STEM}.ttf": dia_ttf_path.read_bytes(),
-        f"fonts/{DIAMOND_STEM}.woff": dia_woff_path.read_bytes(),
-        f"fonts/{DIAMOND_STEM}.woff2": dia_woff2_path.read_bytes(),
+    zip_entries: dict[str, bytes] = {
         "hangrygrotesk.css": css_text.encode("utf-8"),
         "preview.html": (ROOT / "src" / "preview.html").read_bytes(),
         "README.md": (ROOT / "README.md").read_bytes(),
         "OFL.txt": ofl_path.read_bytes(),
     }
+    for font_file in sorted(dist_fonts_dir.rglob("*")):
+        if font_file.is_file():
+            rel_path = font_file.relative_to(ROOT / "dist").as_posix()
+            zip_entries[rel_path] = font_file.read_bytes()
+
     date_time = (EPOCH.year, EPOCH.month, EPOCH.day, EPOCH.hour, EPOCH.minute, EPOCH.second)
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for arcname, data in zip_entries.items():
@@ -1584,7 +2011,7 @@ def main() -> None:
             zf.writestr(info, data)
 
     print(
-        f"Built and validated all 5 styles (Regular, Serif, Pixel, Dotted, Diamond) with {len(expected_cps)} GF_Latin_Core codepoints: {zip_path}"
+        f"Built and validated all 5 families × 9 weights (OTF, TTF, Variable, Webfonts; {len(expected_cps)} codepoints each): {zip_path}"
     )
 
 

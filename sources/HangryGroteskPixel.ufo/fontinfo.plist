@@ -21,7 +21,7 @@
     <key>openTypeHheaLineGap</key>
     <integer>0</integer>
     <key>openTypeNameDescription</key>
-    <string>A geometric stencil display font with Latin letters and digits, available as TTF, WOFF, and WOFF2.</string>
+    <string>A geometric stencil display font suite (Grotesk, Serif, Pixel, Dotted, Diamond) across 9 weights (100–900), available as OTF, TTF, Variable, WOFF, and WOFF2.</string>
     <key>openTypeNameDesigner</key>
     <string>Rajeev Puri</string>
     <key>openTypeNameLicense</key>
