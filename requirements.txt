@@ -2,5 +2,6 @@ fonttools[ufo,woff]>=4.47.0
 ufoLib2>=0.16.0
 ufo2ft>=3.0.0
 fontmake>=3.8.0
+skia-pathops>=0.8.0
 brotli>=1.1.0
 zopfli>=0.2.3

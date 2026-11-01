@@ -1990,28 +1990,60 @@ def main() -> None:
     (ROOT / "dist" / "hangrygrotesk.css").write_text(css_text, encoding="utf-8")
     shutil.copy2(ROOT / "src" / "preview.html", ROOT / "dist" / "preview.html")
 
-    zip_path = ROOT / "dist" / f"HangryGrotesk-{pkg['version']}.zip"
-    zip_entries: dict[str, bytes] = {
-        "hangrygrotesk.css": css_text.encode("utf-8"),
-        "preview.html": (ROOT / "src" / "preview.html").read_bytes(),
-        "README.md": (ROOT / "README.md").read_bytes(),
-        "OFL.txt": ofl_path.read_bytes(),
-    }
-    for font_file in sorted(dist_fonts_dir.rglob("*")):
-        if font_file.is_file():
-            rel_path = font_file.relative_to(ROOT / "dist").as_posix()
-            zip_entries[rel_path] = font_file.read_bytes()
+    # Remove any old zip files in dist/
+    for old_zip in (ROOT / "dist").glob("*.zip"):
+        old_zip.unlink()
 
     date_time = (EPOCH.year, EPOCH.month, EPOCH.day, EPOCH.hour, EPOCH.minute, EPOCH.second)
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        for arcname, data in zip_entries.items():
-            info = zipfile.ZipInfo(filename=arcname, date_time=date_time)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
-            zf.writestr(info, data)
+    built_zips: list[Path] = []
+    for fam_name, fam_prefix, _, _, _, _, _ in family_configs:
+        fam_zip_path = ROOT / "dist" / f"{fam_prefix}-{pkg['version']}.zip"
+        fam_dist_dir = dist_fonts_dir / fam_prefix
+
+        fam_css_blocks = [
+            f"/* {fam_name} (100–900 + Variable) | {pkg['author']['name']} | {pkg['license']} */",
+            f"""@font-face {{
+  font-family: "{fam_name} Variable";
+  src: url("./variable/{fam_prefix}-VariableFont_wght.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}}""",
+        ]
+        for f_n, f_p, st_n, w_n in all_css_faces:
+            if f_p == fam_prefix:
+                fam_css_blocks.append(
+                    f"""@font-face {{
+  font-family: "{f_n}";
+  src: url("./webfonts/{st_n}.woff2") format("woff2"),
+       url("./webfonts/{st_n}.woff") format("woff");
+  font-weight: {w_n};
+  font-style: normal;
+  font-display: swap;
+}}"""
+                )
+        fam_css_text = "\n\n".join(fam_css_blocks) + "\n"
+
+        zip_entries: dict[str, bytes] = {
+            f"{fam_prefix.lower()}.css": fam_css_text.encode("utf-8"),
+            "README.md": (ROOT / "README.md").read_bytes(),
+            "OFL.txt": ofl_path.read_bytes(),
+        }
+        for font_file in sorted(fam_dist_dir.rglob("*")):
+            if font_file.is_file():
+                rel_path = font_file.relative_to(fam_dist_dir).as_posix()
+                zip_entries[rel_path] = font_file.read_bytes()
+
+        with zipfile.ZipFile(fam_zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+            for arcname, data in zip_entries.items():
+                info = zipfile.ZipInfo(filename=arcname, date_time=date_time)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o644 << 16
+                zf.writestr(info, data)
+        built_zips.append(fam_zip_path)
 
     print(
-        f"Built and validated all 5 families × 9 weights (OTF, TTF, Variable, Webfonts; {len(expected_cps)} codepoints each): {zip_path}"
+        f"Built and validated all 5 families × 9 weights (OTF, TTF, Variable, Webfonts; {len(expected_cps)} codepoints each): {[z.name for z in built_zips]}"
     )
 
 

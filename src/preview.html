@@ -856,7 +856,7 @@
     <header class="topbar">
       <a class="brand-group" href="#top">
         <span class="brand-title">Hangry Grotesk</span>
-        <span class="brand-tag">v0.1.0</span>
+        <span class="brand-tag">v0.2.0</span>
       </a>
 
       <nav class="nav-tabs" aria-label="Sections">
@@ -887,7 +887,7 @@
           <button class="align-btn" data-weight-btn="900" type="button" title="Black 900">900</button>
         </div>
         <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle theme">Theme: Dark</button>
-        <a class="btn-primary" href="HangryGrotesk-0.1.0.zip" download>Get It ↓</a>
+        <a class="btn-primary" id="download-btn" href="HangryGrotesk-0.2.0.zip" download>Get It ↓</a>
       </div>
     </header>
 
@@ -1275,12 +1275,23 @@
       });
     });
 
-    // Font variant switcher (Grotesk / Pixel / Dotted)
+    // Font variant switcher (Grotesk / Serif / Pixel / Dotted / Diamond)
+    const downloadBtn = document.querySelector("#download-btn");
+    const variantZipMap = {
+      sans: "HangryGrotesk-0.2.0.zip",
+      serif: "HangryGroteskSerif-0.2.0.zip",
+      pixel: "HangryGroteskPixel-0.2.0.zip",
+      dotted: "HangryGroteskDotted-0.2.0.zip",
+      diamond: "HangryGroteskDiamond-0.2.0.zip"
+    };
     document.querySelectorAll("[data-variant-btn]").forEach(btn => {
       btn.addEventListener("click", () => {
         const variant = btn.dataset.variantBtn;
         document.querySelectorAll("[data-variant-btn]").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
+        if (downloadBtn && variantZipMap[variant]) {
+          downloadBtn.setAttribute("href", variantZipMap[variant]);
+        }
         if (variant === "pixel") {
           document.documentElement.setAttribute("data-variant", "pixel");
           document.querySelector("#val-cap").textContent = "744";
