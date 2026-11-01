@@ -4,8 +4,7 @@
 
 *A geometric stencil display font with a little bite.*
 
-![TypeScript](https://img.shields.io/badge/TypeScript-1E202B?style=for-the-badge&logo=typescript&logoColor=3178C6)
-![Node.js](https://img.shields.io/badge/Node.js-1E202B?style=for-the-badge&logo=nodedotjs&logoColor=339933)
+![Python](https://img.shields.io/badge/Python-1E202B?style=for-the-badge&logo=python&logoColor=3776AB)
 
 </div>
 
@@ -13,85 +12,48 @@
 
 Hangry Grotesk is a custom display typeface for bold headlines, identities, and
 short expressive text. It is built from the glyph outlines in the project SVG
-and ships as a regular desktop font and web fonts.
+and ships as a UFO source, a regular desktop TTF font, and WOFF/WOFF2 web fonts
+conforming to the [Google Fonts Onboarding Guide](https://googlefonts.github.io/gf-guide/onboarding.html).
 
 ## Features
 
 - **Distinctive stencil lettering** — Draw attention with geometric, cut-through forms.
-- **Desktop and web formats** — Use TTF in desktop apps and WOFF/WOFF2 on the web.
+- **Google Fonts Latin Core coverage** — Includes all 319 codepoints in `GF_Latin_Core` (A–Z, a–z, 0–9, extended Latin diacritics, punctuation, currency, and math symbols).
+- **Desktop, web, and UFO formats** — Outputs `sources/HangryGrotesk.ufo`, `fonts/ttf/HangryGrotesk-Regular.ttf`, `fonts/webfonts/HangryGrotesk-Regular.woff2`, and `dist/` bundles.
 - **Interactive specimen** — Preview the typeface, inspect individual glyphs, and adjust a sample.
-- **Lightweight character set** — Includes Latin uppercase and lowercase, digits, period, hyphen, and spaces.
-- **MIT licensed** — Use and distribute the font under the terms in [LICENSE.txt](LICENSE.txt).
+- **OFL 1.1 licensed** — Use and distribute the font under the terms in [OFL.txt](OFL.txt).
 
 ## Preview
 
-Build the project, then open [dist/preview.html](dist/preview.html). The dark
-specimen shows “Hangry Grotesk.” against cap-height, x-height, baseline, and
-descender guides. The guides follow the font’s rendered glyph measurements.
-Click a glyph to add it to the editable sample, adjust size and spacing, or
-copy the CSS declaration.
+Build the project, then open [dist/preview.html](dist/preview.html). Click a glyph
+to add it to the editable sample, adjust size and spacing, or copy the CSS declaration.
 
 ## Tech stack
 
-- **Build runtime:** Bun and TypeScript
-- **Font conversion:** fonteditor-core
-- **ZIP packaging:** fflate
+- **Build runtime:** Python 3
+- **Font compilation:** `fontTools`, `ufoLib2`, `ufo2ft`, `fontmake`
+- **Quality assurance:** `fontbakery` (`check-googlefonts` profile)
 - **Web delivery:** CSS `@font-face`, WOFF2 and WOFF
 
 ## Getting started
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) 1.2 or newer
-- Node.js and npm for creating the optional npm tarball
+- Python 3.10 or newer
 
 ### Build the font files
 
 ```sh
-bun install
-bun run check
-bun run build
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python3 src/build_font.py
 ```
 
-The build writes TTF, WOFF, WOFF2, CSS, an HTML specimen, and
-`dist/HangryGrotesk-0.1.0.zip`.
-
-### Create the npm package
-
-```sh
-npm pack --pack-destination dist
-```
-
-The package prepack step runs the type check and font build. To install the
-result in another project:
-
-```sh
-npm install ./dist/hangrygrotesk-0.1.0.tgz
-```
-
-Import the CSS in your app:
-
-```js
-import "hangrygrotesk";
-```
-
-## GitHub Actions release
-
-The `Build, release, and deploy font` workflow runs on pushes to `main`, for
-`v*` tags, and manually from the Actions tab. A tag must match the package version in
-`package.json` (for example, `v0.1.0`). Pushing a matching tag builds the font
-files and creates or updates a GitHub Release with the ZIP and npm tarball
-attached. Main-branch pushes and manual runs from `main` also deploy the
-specimen and web fonts to GitHub Pages. The Pages artifact publishes the
-preview as `index.html` and includes its CSS, font files, and downloadable ZIP.
-
-For the first deployment, set the repository's Pages publishing source to
-**GitHub Actions** under **Settings → Pages**.
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
+The build writes:
+- `sources/HangryGrotesk.ufo` (UFO3 source)
+- `fonts/ttf/HangryGrotesk-Regular.ttf` (Google Fonts binary)
+- `fonts/webfonts/HangryGrotesk-Regular.woff2` (Webfont binary)
+- `dist/` (TTF, WOFF, WOFF2, CSS, HTML specimen, and `dist/HangryGrotesk-0.1.0.zip`)
 
 ## Use on the web
 
@@ -108,13 +70,7 @@ body {
 }
 ```
 
-## Character coverage
-
-The font contains A–Z, a–z, 0–9, period, hyphen, space, and nonbreaking space.
-Characters outside this set fall back to another font. Hangry Grotesk has one
-regular weight, with no italic, kerning pairs, hinting, or extended language
-coverage. The source shapes use proportional advances and uniform sidebearings.
-
 ## License
 
-Copyright (c) 2026 Rajeev Puri. Licensed under the [MIT License](LICENSE.txt).
+Copyright 2026 The Hangry Grotesk Project Authors (https://github.com/ascx-studio/HangryGrotesk).
+Licensed under the [SIL Open Font License 1.1](OFL.txt).
