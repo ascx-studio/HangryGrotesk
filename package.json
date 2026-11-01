@@ -20,7 +20,7 @@
     "./fonts/*": "./dist/fonts/*"
   },
   "sideEffects": ["**/*.css"],
-  "files": ["dist/fonts", "dist/hangrygrotesk.css", "src/hangrygrotesk.svg", "src/hangrygroteskpixel.svg", "OFL.txt"],
+  "files": ["dist/fonts", "dist/hangrygrotesk.css", "src/hangrygrotesk.svg", "src/hangrygroteskpixel.svg", "src/hangrygroteskdotted.svg", "OFL.txt"],
   "scripts": {
     "build": "python3 -c 'import ufo2ft' 2>/dev/null && python3 src/build_font.py || .venv/bin/python3 src/build_font.py",
     "check": "python3 -m py_compile src/build_font.py",

@@ -23,6 +23,14 @@
       font-display: swap;
     }
 
+    @font-face {
+      font-family: HangryDotted;
+      src: url("./fonts/HangryGroteskDotted-Regular.woff2") format("woff2"),
+           url("./fonts/HangryGroteskDotted-Regular.woff") format("woff");
+      font-weight: 400;
+      font-display: swap;
+    }
+
     :root {
       --active-font: "Hangry Grotesk", Hangry, sans-serif;
       color-scheme: dark;
@@ -81,6 +89,10 @@
 
     [data-variant="pixel"] {
       --active-font: "Hangry Grotesk Pixel", HangryPixel, sans-serif;
+    }
+
+    [data-variant="dotted"] {
+      --active-font: "Hangry Grotesk Dotted", HangryDotted, sans-serif;
     }
 
     .specimen-font {
@@ -833,6 +845,7 @@
         <div class="align-group" role="group" aria-label="Font variant">
           <button class="align-btn active" id="variant-sans" data-variant-btn="sans" type="button">Grotesk</button>
           <button class="align-btn" id="variant-pixel" data-variant-btn="pixel" type="button">Pixel</button>
+          <button class="align-btn" id="variant-dotted" data-variant-btn="dotted" type="button">Dotted</button>
         </div>
         <button class="theme-btn" id="theme-toggle" type="button" aria-label="Toggle theme">Theme: Dark</button>
         <a class="btn-primary" href="HangryGrotesk-0.1.0.zip" download>Get It ↓</a>
@@ -859,8 +872,8 @@
       <!-- 4-Column Technical Stats Grid -->
       <section class="stats-grid" aria-label="Typeface specifications">
         <div class="stat-cell">
-          <div class="stat-top"><span>Variants</span><span>Grotesk + Pixel</span></div>
-          <div class="stat-value specimen-font">2 Styles</div>
+          <div class="stat-top"><span>Variants</span><span>Grotesk · Pixel · Dotted</span></div>
+          <div class="stat-value specimen-font">3 Styles</div>
         </div>
         <div class="stat-cell">
           <div class="stat-top"><span>Character Set</span><span>A–Z a–z 0–9</span></div>
@@ -1134,13 +1147,13 @@
       });
     });
 
-    // Font variant switcher (Grotesk / Pixel)
+    // Font variant switcher (Grotesk / Pixel / Dotted)
     document.querySelectorAll("[data-variant-btn]").forEach(btn => {
       btn.addEventListener("click", () => {
-        const isPixel = btn.dataset.variantBtn === "pixel";
+        const variant = btn.dataset.variantBtn;
         document.querySelectorAll("[data-variant-btn]").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        if (isPixel) {
+        if (variant === "pixel") {
           document.documentElement.setAttribute("data-variant", "pixel");
           document.querySelector("#val-cap").textContent = "744";
           document.querySelector("#val-x").textContent = "608";
@@ -1149,6 +1162,15 @@
           document.querySelector("#stage-val-x").textContent = "608";
           document.querySelector("#stage-val-desc").textContent = "-238";
           document.querySelector("#stage-lsb").textContent = "GRID: 34 UPEM · PIXEL TILES";
+        } else if (variant === "dotted") {
+          document.documentElement.setAttribute("data-variant", "dotted");
+          document.querySelector("#val-cap").textContent = "742";
+          document.querySelector("#val-x").textContent = "606";
+          document.querySelector("#val-desc").textContent = "-238";
+          document.querySelector("#stage-val-cap").textContent = "742";
+          document.querySelector("#stage-val-x").textContent = "606";
+          document.querySelector("#stage-val-desc").textContent = "-238";
+          document.querySelector("#stage-lsb").textContent = "GRID: 34 UPEM · DOT MATRIX";
         } else {
           document.documentElement.removeAttribute("data-variant");
           document.querySelector("#val-cap").textContent = "762";

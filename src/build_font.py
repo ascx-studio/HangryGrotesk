@@ -22,6 +22,8 @@ FAMILY = "Hangry Grotesk"
 STEM = "HangryGrotesk-Regular"
 PIXEL_FAMILY = "Hangry Grotesk Pixel"
 PIXEL_STEM = "HangryGroteskPixel-Regular"
+DOTTED_FAMILY = "Hangry Grotesk Dotted"
+DOTTED_STEM = "HangryGroteskDotted-Regular"
 EPOCH = datetime.datetime(2026, 10, 31, 0, 0, 0, tzinfo=datetime.timezone.utc)
 
 
@@ -344,6 +346,40 @@ def main() -> None:
         x_height=608,
     )
 
+    # 3. Build Dotted UFO & TTF from src/hangrygroteskdotted.svg
+    dotted_ufo = ufoLib2.Font()
+    build_svg_glyphs(dotted_ufo, ROOT / "src" / "hangrygroteskdotted.svg", sidebearing=68)
+    set_ufo_metadata(
+        dotted_ufo,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=DOTTED_FAMILY,
+        stem=DOTTED_STEM,
+        cap_height=742,
+        x_height=606,
+    )
+
+    dotted_ufo_path = sources_dir / "HangryGroteskDotted.ufo"
+    if dotted_ufo_path.exists():
+        shutil.rmtree(dotted_ufo_path)
+    dotted_ufo.save(dotted_ufo_path, overwrite=True)
+
+    # Compile Dotted TTF directly from discrete 34-UPEM circular dots in src/hangrygroteskdotted.svg
+    dotted_ttf = ufo2ft.compileTTF(
+        dotted_ufo, removeOverlaps=False, reverseDirection=False, inplace=False
+    )
+    postprocess_ttf(
+        dotted_ttf,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=DOTTED_FAMILY,
+        stem=DOTTED_STEM,
+        cap_height=742,
+        x_height=606,
+    )
+
     gf_ttf_dir = ROOT / "fonts" / "ttf"
     gf_web_dir = ROOT / "fonts" / "webfonts"
     dist_fonts_dir = ROOT / "dist" / "fonts"
@@ -356,10 +392,14 @@ def main() -> None:
     pix_ttf_path, pix_woff_path, pix_woff2_path = save_font_formats(
         pixel_ttf, PIXEL_STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
     )
+    dot_ttf_path, dot_woff_path, dot_woff2_path = save_font_formats(
+        dotted_ttf, DOTTED_STEM, dist_fonts_dir, gf_ttf_dir, gf_web_dir
+    )
 
-    # Verify exact glyph outlines from src/hangrygrotesk.svg and src/hangrygroteskpixel.svg
+    # Verify exact glyph outlines from src/hangrygrotesk.svg, src/hangrygroteskpixel.svg, and src/hangrygroteskdotted.svg
     reloaded = TTFont(ttf_path)
     reloaded_pix = TTFont(pix_ttf_path)
+    reloaded_dot = TTFont(dot_ttf_path)
     expected_codes = sorted([
         32, 45, 46,
         *range(48, 58),
@@ -369,6 +409,7 @@ def main() -> None:
     ])
     assert sorted(reloaded.getBestCmap().keys()) == expected_codes
     assert sorted(reloaded_pix.getBestCmap().keys()) == expected_codes
+    assert sorted(reloaded_dot.getBestCmap().keys()) == expected_codes
     assert reloaded["glyf"]["A"].yMin == 0
     assert reloaded["glyf"]["A"].yMax == 762
     assert reloaded["glyf"]["g"].yMin < 0
@@ -377,8 +418,10 @@ def main() -> None:
     assert reloaded["glyf"]["eight"].numberOfContours == 2
     assert reloaded_pix["glyf"]["A"].yMin == 0
     assert reloaded_pix["glyf"]["A"].yMax == 744
+    assert reloaded_dot["glyf"]["A"].yMin == 0
+    assert reloaded_dot["glyf"]["A"].yMax == 742
 
-    css_text = f"""/* {FAMILY} & {PIXEL_FAMILY} | {pkg["author"]["name"]} | {pkg["license"]} */
+    css_text = f"""/* {FAMILY}, {PIXEL_FAMILY} & {DOTTED_FAMILY} | {pkg["author"]["name"]} | {pkg["license"]} */
 @font-face {{
   font-family: "{FAMILY}";
   src: url("./fonts/{STEM}.woff2") format("woff2"),
@@ -398,6 +441,16 @@ def main() -> None:
   font-display: swap;
   unicode-range: U+0020, U+002D-002E, U+0030-0039, U+0041-005A, U+0061-007A, U+00A0;
 }}
+
+@font-face {{
+  font-family: "{DOTTED_FAMILY}";
+  src: url("./fonts/{DOTTED_STEM}.woff2") format("woff2"),
+       url("./fonts/{DOTTED_STEM}.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0020, U+002D-002E, U+0030-0039, U+0041-005A, U+0061-007A, U+00A0;
+}}
 """
     (ROOT / "dist" / "hangrygrotesk.css").write_text(css_text, encoding="utf-8")
     shutil.copy2(ROOT / "src" / "preview.html", ROOT / "dist" / "preview.html")
@@ -410,6 +463,9 @@ def main() -> None:
         f"fonts/{PIXEL_STEM}.ttf": pix_ttf_path.read_bytes(),
         f"fonts/{PIXEL_STEM}.woff": pix_woff_path.read_bytes(),
         f"fonts/{PIXEL_STEM}.woff2": pix_woff2_path.read_bytes(),
+        f"fonts/{DOTTED_STEM}.ttf": dot_ttf_path.read_bytes(),
+        f"fonts/{DOTTED_STEM}.woff": dot_woff_path.read_bytes(),
+        f"fonts/{DOTTED_STEM}.woff2": dot_woff2_path.read_bytes(),
         "hangrygrotesk.css": css_text.encode("utf-8"),
         "preview.html": (ROOT / "src" / "preview.html").read_bytes(),
         "README.md": (ROOT / "README.md").read_bytes(),
@@ -423,7 +479,9 @@ def main() -> None:
             info.external_attr = 0o644 << 16
             zf.writestr(info, data)
 
-    print(f"Built and validated Regular & Pixel UFO, TTF, WOFF, WOFF2, metadata, and ZIP: {zip_path}")
+    print(
+        f"Built and validated Regular, Pixel & Dotted UFO, TTF, WOFF, WOFF2, metadata, and ZIP: {zip_path}"
+    )
 
 
 if __name__ == "__main__":
