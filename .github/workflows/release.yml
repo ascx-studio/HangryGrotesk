@@ -1,10 +1,13 @@
 name: Build, release, and deploy font
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Create or update GitHub Release for package.json version"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -37,19 +40,20 @@ jobs:
           name: hangry-grotesk-${{ github.run_id }}
           path: dist/
       - name: Create or update GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.create_release == true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" dist/HangryGrotesk*.zip --clobber
+          TAG_NAME="v$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            gh release upload "${TAG_NAME}" dist/HangryGrotesk*.zip --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" dist/HangryGrotesk*.zip --title "Hangry Grotesk ${GITHUB_REF_NAME}" --generate-notes
+            gh release create "${TAG_NAME}" dist/HangryGrotesk*.zip --title "Hangry Grotesk ${TAG_NAME}" --generate-notes
           fi
 
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       pages: write

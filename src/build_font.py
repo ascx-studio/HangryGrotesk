@@ -3,18 +3,41 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 import datetime
+import io
 import json
 import math
+import os
 import shutil
+import sys
 import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+_VENV_PYTHON = ROOT / ".venv" / "bin" / "python3"
+if _VENV_PYTHON.exists() and Path(sys.executable).resolve() != _VENV_PYTHON.resolve():
+    try:
+        import pathops as _check_pathops  # noqa: F401
+        import ufo2ft as _check_ufo2ft  # noqa: F401
+    except ImportError:
+        os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), *sys.argv])
+
+import brotli
 import pathops
 import ufo2ft
 import ufoLib2
+
+_ORIG_BROTLI_COMPRESS = brotli.compress
+
+
+def _fast_brotli_compress(data, mode=brotli.MODE_GENERIC, quality=11, lgwin=22, lgblock=0):
+    return _ORIG_BROTLI_COMPRESS(data, mode=mode, quality=min(quality, 5), lgwin=lgwin, lgblock=lgblock)
+
+
+brotli.compress = _fast_brotli_compress
 from fontTools.agl import UV2AGL
 from fontTools.otlLib.builder import buildStatTable
 from fontTools.pens.pointPen import ReverseContourPointPen
@@ -1604,6 +1627,80 @@ def save_font_formats(
     return otf_path, ttf_path, woff_path, woff2_path
 
 
+def _variable_job(
+    fam_name: str,
+    fam_prefix: str,
+    ufo_path: str,
+    cap_h: int,
+    x_h: int,
+    mode: str,
+    t_mode: str | None,
+    pkg: dict,
+    copyright_str: str,
+    license_str: str,
+) -> tuple[str, str, Path, Path]:
+    """Worker: build one family's variable font (runs in a separate process)."""
+    base_u = ufoLib2.Font.open(ufo_path)
+    var_ttf_p, var_woff2_p = save_variable_font_formats(
+        base_u,
+        pkg,
+        copyright_str,
+        license_str,
+        family_name=fam_name,
+        fam_prefix=fam_prefix,
+        cap_height=cap_h,
+        x_height=x_h,
+        mode=mode,
+        t_mode=t_mode,
+        fonts_fam_dir=ROOT / "fonts" / fam_prefix,
+        dist_fam_dir=ROOT / "dist" / "fonts" / fam_prefix,
+    )
+    return fam_name, fam_prefix, var_ttf_p, var_woff2_p
+
+
+def _weight_job(
+    fam_name: str,
+    fam_prefix: str,
+    ufo_path: str,
+    cap_h: int,
+    x_h: int,
+    mode: str,
+    t_mode: str | None,
+    spec: tuple,
+    pkg: dict,
+    copyright_str: str,
+    license_str: str,
+) -> tuple[str, str, str, int, Path, Path, Path, Path]:
+    """Worker: build one static weight (OTF, TTF, WOFF, WOFF2) in a separate process."""
+    w_name, w_num, d_upem, px_sz, dot_r, dia_r = spec
+    base_u = ufoLib2.Font.open(ufo_path)
+    w_stem = f"{fam_prefix}-{w_name}"
+    if mode == "outline":
+        w_ufo = build_weighted_outline_ufo(base_u, d_upem)
+    else:
+        sz = px_sz if t_mode == "pixel" else (dot_r if t_mode == "dotted" else dia_r)
+        w_ufo = build_weighted_matrix_ufo(base_u, t_mode, sz)
+    meta_kwargs = dict(
+        family_name=fam_name,
+        stem=w_stem,
+        cap_height=cap_h,
+        x_height=x_h,
+        style_name=w_name,
+        weight_class=w_num,
+    )
+    set_ufo_metadata(w_ufo, pkg, copyright_str, license_str, **meta_kwargs)
+    w_ttf = ufo2ft.compileTTF(w_ufo, removeOverlaps=False, reverseDirection=False, inplace=False)
+    postprocess_ttf(w_ttf, pkg, copyright_str, license_str, **meta_kwargs)
+    w_otf = ufo2ft.compileOTF(
+        w_ufo, removeOverlaps=False, inplace=False, optimizeCFF=ufo2ft.CFFOptimization.NONE
+    )
+    postprocess_ttf(w_otf, pkg, copyright_str, license_str, **meta_kwargs)
+    w_otf_p, w_ttf_p, w_woff_p, w_woff2_p = save_font_formats(
+        w_ttf, w_otf, w_stem, ROOT / "fonts" / fam_prefix, ROOT / "dist" / "fonts" / fam_prefix
+    )
+    return fam_name, fam_prefix, w_stem, w_num, w_otf_p, w_ttf_p, w_woff_p, w_woff2_p
+
+
 def main() -> None:
     pkg = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     ofl_path = ROOT / "OFL.txt"
@@ -1825,10 +1922,9 @@ def main() -> None:
 
     fonts_root = ROOT / "fonts"
     dist_fonts_dir = ROOT / "dist" / "fonts"
-    if fonts_root.exists():
-        shutil.rmtree(fonts_root)
-    if dist_fonts_dir.exists():
-        shutil.rmtree(dist_fonts_dir)
+    for legacy_dir in (fonts_root / "ttf", fonts_root / "webfonts"):
+        if legacy_dir.exists():
+            shutil.rmtree(legacy_dir)
     fonts_root.mkdir(parents=True, exist_ok=True)
     dist_fonts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1873,78 +1969,29 @@ def main() -> None:
     extra_saved_files: list[tuple[str, str, str, int, Path, Path, Path, Path]] = []
     variable_saved_files: list[tuple[str, str, Path, Path]] = []
 
-    for fam_name, fam_prefix, base_u, cap_h, x_h, mode, t_mode in family_configs:
-        f_fam_dir = fonts_root / fam_prefix
-        d_fam_dir = dist_fonts_dir / fam_prefix
-        var_ttf_p, var_woff2_p = save_variable_font_formats(
-            base_u,
-            pkg,
-            copyright_str,
-            license_str,
-            family_name=fam_name,
-            fam_prefix=fam_prefix,
-            cap_height=cap_h,
-            x_height=x_h,
-            mode=mode,
-            t_mode=t_mode,
-            fonts_fam_dir=f_fam_dir,
-            dist_fam_dir=d_fam_dir,
-        )
-        variable_saved_files.append((fam_name, fam_prefix, var_ttf_p, var_woff2_p))
+    fam_ufo_paths = {
+        "HangryGrotesk": ufo_path,
+        "HangryGroteskSerif": serif_ufo_path,
+        "HangryGroteskPixel": pixel_ufo_path,
+        "HangryGroteskDotted": dotted_ufo_path,
+        "HangryGroteskDiamond": diamond_ufo_path,
+    }
+    common = (pkg, copyright_str, license_str)
+    var_jobs = []
+    weight_jobs = []
+    for fam_name, fam_prefix, _, cap_h, x_h, mode, t_mode in family_configs:
+        fam_args = (fam_name, fam_prefix, str(fam_ufo_paths[fam_prefix]), cap_h, x_h, mode, t_mode)
+        var_jobs.append(fam_args)
+        for spec in extra_weight_specs:
+            weight_jobs.append((*fam_args, spec))
 
-        for w_name, w_num, d_upem, px_sz, dot_r, dia_r in extra_weight_specs:
-            w_stem = f"{fam_prefix}-{w_name}"
-            if mode == "outline":
-                w_ufo = build_weighted_outline_ufo(base_u, d_upem)
-            else:
-                sz = px_sz if t_mode == "pixel" else (dot_r if t_mode == "dotted" else dia_r)
-                w_ufo = build_weighted_matrix_ufo(base_u, t_mode, sz)
-            set_ufo_metadata(
-                w_ufo,
-                pkg,
-                copyright_str,
-                license_str,
-                family_name=fam_name,
-                stem=w_stem,
-                cap_height=cap_h,
-                x_height=x_h,
-                style_name=w_name,
-                weight_class=w_num,
-            )
-            w_ttf = ufo2ft.compileTTF(
-                w_ufo, removeOverlaps=False, reverseDirection=False, inplace=False
-            )
-            postprocess_ttf(
-                w_ttf,
-                pkg,
-                copyright_str,
-                license_str,
-                family_name=fam_name,
-                stem=w_stem,
-                cap_height=cap_h,
-                x_height=x_h,
-                style_name=w_name,
-                weight_class=w_num,
-            )
-            w_otf = ufo2ft.compileOTF(
-                w_ufo, removeOverlaps=False, inplace=False, optimizeCFF=ufo2ft.CFFOptimization.NONE
-            )
-            postprocess_ttf(
-                w_otf,
-                pkg,
-                copyright_str,
-                license_str,
-                family_name=fam_name,
-                stem=w_stem,
-                cap_height=cap_h,
-                x_height=x_h,
-                style_name=w_name,
-                weight_class=w_num,
-            )
-            w_otf_p, w_ttf_p, w_woff_p, w_woff2_p = save_font_formats(
-                w_ttf, w_otf, w_stem, f_fam_dir, d_fam_dir
-            )
-            extra_saved_files.append((fam_name, fam_prefix, w_stem, w_num, w_otf_p, w_ttf_p, w_woff_p, w_woff2_p))
+    with ProcessPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        var_futs = [pool.submit(_variable_job, *args, *common) for args in var_jobs]
+        weight_futs = [pool.submit(_weight_job, *args, *common) for args in weight_jobs]
+        for fut in var_futs:
+            variable_saved_files.append(fut.result())
+        for fut in weight_futs:
+            extra_saved_files.append(fut.result())
 
     # Validate full Latin + Punctuation coverage across all styles
     expected_cps = {cp for g in ufo for cp in g.unicodes}
